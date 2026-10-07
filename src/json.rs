@@ -6,8 +6,15 @@ use serde_json::{Map, Value};
 /// Serialize a value as JSON that is safe to embed in an HTML `<script>`
 /// element. Forward slashes and HTML-significant characters are escaped, so
 /// a string like `</script>` can't end the element early.
+///
+/// A value that fails to serialize becomes `null`.
 pub fn html_safe_json(value: &impl Serialize) -> String {
-    let json = serde_json::to_string(value).unwrap_or_else(|_| "null".to_owned());
+    try_html_safe_json(value).unwrap_or_else(|_| "null".to_owned())
+}
+
+/// [`html_safe_json`], failing when the value doesn't serialize.
+pub(crate) fn try_html_safe_json(value: &impl Serialize) -> serde_json::Result<String> {
+    let json = serde_json::to_string(value)?;
     let mut escaped = String::with_capacity(json.len());
 
     for c in json.chars() {
@@ -18,6 +25,24 @@ pub fn html_safe_json(value: &impl Serialize) -> String {
             '&' => escaped.push_str("\\u0026"),
             '\u{2028}' => escaped.push_str("\\u2028"),
             '\u{2029}' => escaped.push_str("\\u2029"),
+            c => escaped.push(c),
+        }
+    }
+
+    Ok(escaped)
+}
+
+/// Escape text for an HTML attribute value, such as the root element's id.
+pub(crate) fn escape_attribute(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+
+    for c in text.chars() {
+        match c {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&#39;"),
             c => escaped.push(c),
         }
     }
@@ -76,6 +101,23 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<Value>(&json).unwrap(),
             json!({ "html": "</script><b>&" })
+        );
+    }
+
+    #[test]
+    fn values_that_fail_to_serialize_are_errors() {
+        // JSON object keys must be strings.
+        let value = std::collections::BTreeMap::from([((1, 2), 3)]);
+
+        assert!(try_html_safe_json(&value).is_err());
+        assert_eq!(html_safe_json(&value), "null");
+    }
+
+    #[test]
+    fn escapes_attribute_values() {
+        assert_eq!(
+            escape_attribute(r#"app" onload='x' <&>"#),
+            "app&quot; onload=&#39;x&#39; &lt;&amp;&gt;"
         );
     }
 

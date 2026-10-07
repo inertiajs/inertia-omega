@@ -9,7 +9,19 @@ use http::{StatusCode, header};
 /// Response extensions must be `Clone + Sync`, which a render with pending
 /// prop callbacks isn't, hence the shared, take-once slot.
 #[derive(Clone)]
-struct PendingRender(Arc<Mutex<Option<crate::Response>>>);
+struct PendingRender(Arc<Slot>);
+
+struct Slot(Mutex<Option<crate::Response>>);
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        // Still here: no layer took it, so the client got an empty `200`.
+        // Say so, since nothing else would.
+        if self.0.get_mut().unwrap_or_else(PoisonError::into_inner).is_some() {
+            tracing::error!("an Inertia render was returned from a route without an `InertiaLayer`");
+        }
+    }
+}
 
 /// Returning a render from a handler hands it to the [`InertiaLayer`](super::InertiaLayer),
 /// which resolves its props once the handler is done, much like a Laravel
@@ -28,7 +40,7 @@ impl IntoResponse for crate::Response {
         let mut response = Response::default();
         response
             .extensions_mut()
-            .insert(PendingRender(Arc::new(Mutex::new(Some(self)))));
+            .insert(PendingRender(Arc::new(Slot(Mutex::new(Some(self))))));
         response
     }
 }
@@ -42,7 +54,8 @@ pub fn is_render(response: &Response) -> bool {
 /// Render the page a handler returned, if any.
 pub(super) async fn render(mut response: Response) -> Result<Response, crate::PropError> {
     let pending = response.extensions_mut().remove::<PendingRender>();
-    let Some(page) = pending.and_then(|pending| pending.0.lock().unwrap_or_else(PoisonError::into_inner).take()) else {
+    let Some(page) = pending.and_then(|pending| pending.0.0.lock().unwrap_or_else(PoisonError::into_inner).take())
+    else {
         return Ok(response);
     };
 

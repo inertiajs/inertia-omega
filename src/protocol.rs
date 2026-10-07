@@ -15,11 +15,17 @@ use crate::request::Request;
 /// running it: when an Inertia `GET` visit comes from a client with
 /// outdated assets, a `409 Conflict` that has it reload the page.
 pub fn before(request: &Request, config: &Config) -> Option<HttpResponse> {
+    version_conflict(request, || config.current_version())
+}
+
+/// [`before`], computing the version only for the requests it checks.
+pub(crate) fn version_conflict<V: AsRef<str>>(request: &Request, version: impl FnOnce() -> V) -> Option<HttpResponse> {
     if !request.is_inertia() || request.method() != Method::GET {
         return None;
     }
 
-    let version = config.current_version();
+    let version = version();
+    let version = version.as_ref();
 
     if request.version().unwrap_or_default() == version {
         return None;
@@ -205,6 +211,18 @@ mod tests {
 
         assert_eq!(replacement.status(), StatusCode::CONFLICT);
         assert_eq!(replacement.headers()["x-inertia-redirect"], "/users#top");
+    }
+
+    #[test]
+    fn prefetches_follow_redirects_with_fragments() {
+        // A prefetched page is only cached, so there's no visit whose
+        // fragment `fetch` could drop.
+        let request = request(Method::GET, &[("x-inertia", "true"), ("purpose", "prefetch")]);
+        let mut response = parts(StatusCode::FOUND, Some("/users#top"));
+
+        assert!(after(&request, &mut response, true).is_none());
+        assert_eq!(response.status, StatusCode::FOUND);
+        assert_eq!(response.headers["location"], "/users#top");
     }
 
     #[test]

@@ -29,6 +29,7 @@ impl Request {
             .map_or_else(|| uri.path().to_owned(), |path| path.as_str().to_owned());
 
         let scheme = header_str(&headers, &HeaderName::from_static("x-forwarded-proto"))
+            .and_then(forwarded_scheme)
             .or_else(|| uri.scheme_str())
             .unwrap_or("http");
         let host = header_str(&headers, &header::HOST)
@@ -65,6 +66,9 @@ impl Request {
     }
 
     /// The absolute URL, built from the `Host` and `X-Forwarded-Proto` headers.
+    ///
+    /// Both are taken as sent, so a proxy in front of the app should set
+    /// them; only `http` and `https` are accepted as the scheme.
     pub fn full_url(&self) -> &str {
         &self.full_url
     }
@@ -151,6 +155,17 @@ fn header_str<'a>(headers: &'a HeaderMap, name: &HeaderName) -> Option<&'a str> 
     headers.get(name).and_then(|value| value.to_str().ok())
 }
 
+/// The scheme in an `X-Forwarded-Proto` header. Each proxy appends its own,
+/// so the client's is the first; anything but HTTP's is ignored, since it
+/// ends up in a URL the client is sent to.
+fn forwarded_scheme(value: &str) -> Option<&'static str> {
+    let first = value.split(',').next()?.trim();
+
+    ["https", "http"]
+        .into_iter()
+        .find(|scheme| first.eq_ignore_ascii_case(scheme))
+}
+
 /// Parse a comma-separated header into a list, or `None` when absent or empty.
 fn header_list(headers: &HeaderMap, name: &HeaderName) -> Option<Vec<String>> {
     let values: Vec<String> = header_str(headers, name)?
@@ -194,6 +209,20 @@ mod tests {
         assert_eq!(request.only(), Some(&["users".to_owned(), "stats".to_owned()][..]));
         assert_eq!(request.except(), None);
         assert_eq!(request.reset(), ["users"]);
+    }
+
+    #[test]
+    fn the_scheme_is_the_first_forwarded_protocol() {
+        let forwarded = |proto| {
+            request(&[("host", "example.com"), ("x-forwarded-proto", proto)])
+                .full_url()
+                .to_owned()
+        };
+
+        assert_eq!(forwarded("https"), "https://example.com/users?page=2");
+        assert_eq!(forwarded("HTTPS , http"), "https://example.com/users?page=2");
+        assert_eq!(forwarded("javascript"), "http://example.com/users?page=2");
+        assert_eq!(forwarded(""), "http://example.com/users?page=2");
     }
 
     #[test]

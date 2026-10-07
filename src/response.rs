@@ -10,7 +10,7 @@ use crate::HttpResponse;
 use crate::errors::ErrorBags;
 use crate::header as inertia_header;
 use crate::inertia::Inertia;
-use crate::json::{encode_big_integers, html_safe_json};
+use crate::json::{encode_big_integers, escape_attribute, try_html_safe_json};
 use crate::page::Page;
 use crate::props::{self, IntoProp, PropError, Props, PropsResolver};
 use crate::session::{SharedSession, key};
@@ -205,11 +205,11 @@ impl Response {
         let props = props?;
         let config = inertia.config();
         let request = inertia.request();
-        let pending = inertia.take_pending();
-        let stored = Stored::pull(inertia.session()).await;
+        let mut pending = inertia.take_pending();
+        let stored = Stored::read(inertia.session()).await;
 
-        let mut errors = stored.errors;
-        errors.merge(pending.errors);
+        let mut errors = stored.errors.clone();
+        errors.merge(pending.errors.clone());
 
         let mut shared = Props::new();
         shared.insert(
@@ -219,11 +219,25 @@ impl Response {
         for share in &config.shares {
             shared.extend(share(request));
         }
-        shared.extend(pending.shared);
+        shared.extend(std::mem::take(&mut pending.shared));
 
-        let (props, metadata) = PropsResolver::new(request, &component)
+        let resolved = PropsResolver::new(request, &component)
             .resolve(shared, props, config.expose_shared_prop_keys)
-            .await?;
+            .await;
+
+        // A failed render shows an error page instead of this one, so the
+        // flash data, errors and history flags it would have delivered are
+        // kept for the next render. Props shared with `Inertia::share` were
+        // moved into the resolver above, so they aren't.
+        let (props, metadata) = match resolved {
+            Ok(resolved) => resolved,
+            Err(error) => {
+                inertia.restore_pending(pending);
+                return Err(error);
+            }
+        };
+
+        stored.forget(inertia.session()).await;
 
         let preserve_big_integers = preserve_big_integers.unwrap_or(config.preserve_big_integers);
         let encode = |map: Map<String, Value>| {
@@ -249,7 +263,7 @@ impl Response {
                 .url_resolver
                 .as_ref()
                 .map_or_else(|| request.url().to_owned(), |resolve| resolve(request)),
-            version: config.current_version(),
+            version: inertia.version().to_owned(),
             metadata,
             preserve_big_integers,
             clear_history: clear_history || pending.clear_history || stored.clear_history,
@@ -269,30 +283,47 @@ struct Stored {
     errors: ErrorBags,
     clear_history: bool,
     preserve_fragment: bool,
+    /// The keys that were in the session.
+    found: Vec<&'static str>,
 }
 
 impl Stored {
-    /// Pull the stored state, so it's delivered to this page only.
-    async fn pull(session: Option<&SharedSession>) -> Self {
+    /// Read the stored state, leaving it in the session until the page has
+    /// rendered.
+    async fn read(session: Option<&SharedSession>) -> Self {
         let Some(session) = session else {
             return Self::default();
         };
 
-        Self {
-            flash: pull(session, key::FLASH).await,
-            errors: pull(session, key::ERRORS).await,
-            clear_history: pull(session, key::CLEAR_HISTORY).await,
-            preserve_fragment: pull(session, key::PRESERVE_FRAGMENT).await,
+        let mut stored = Self::default();
+        stored.flash = stored.get(session, key::FLASH).await;
+        stored.errors = stored.get(session, key::ERRORS).await;
+        stored.clear_history = stored.get(session, key::CLEAR_HISTORY).await;
+        stored.preserve_fragment = stored.get(session, key::PRESERVE_FRAGMENT).await;
+        stored
+    }
+
+    async fn get<T: serde::de::DeserializeOwned + Default>(&mut self, session: &SharedSession, key: &'static str) -> T {
+        let Some(value) = session.get(key).await else {
+            return T::default();
+        };
+
+        self.found.push(key);
+        serde_json::from_value(value).unwrap_or_default()
+    }
+
+    /// Remove the stored state, so it's delivered to one page only. Only the
+    /// keys that were found are removed, since removing a missing key may
+    /// still mark a session modified.
+    async fn forget(&self, session: Option<&SharedSession>) {
+        let Some(session) = session else {
+            return;
+        };
+
+        for key in &self.found {
+            session.pull(key).await;
         }
     }
-}
-
-async fn pull<T: serde::de::DeserializeOwned + Default>(session: &SharedSession, key: &str) -> T {
-    session
-        .pull(key)
-        .await
-        .and_then(|value| serde_json::from_value(value).ok())
-        .unwrap_or_default()
 }
 
 /// The page as JSON, for Inertia visits.
@@ -323,14 +354,25 @@ async fn document(inertia: &Inertia, page: &Page, data: &Map<String, Value>, ssr
     };
 
     let ssr = rendered.is_some();
-    let Rendered { head, body } = rendered.unwrap_or_else(|| Rendered {
-        head: String::new(),
-        body: format!(
-            r#"<script data-page="{id}" type="application/json">{json}</script><div id="{id}"></div>"#,
-            id = config.root_id,
-            json = html_safe_json(page),
-        ),
-    });
+    let Rendered { head, body } = match rendered {
+        Some(rendered) => rendered,
+        // Defensive: `Page` holds only strings and JSON values today, so it
+        // can't fail to serialize. Should that change, fail like the JSON
+        // response does, rather than boot the client with `null` page data.
+        None => match try_html_safe_json(page) {
+            Ok(json) => Rendered {
+                head: String::new(),
+                body: format!(
+                    r#"<script data-page="{id}" type="application/json">{json}</script><div id="{id}"></div>"#,
+                    id = escape_attribute(&config.root_id),
+                ),
+            },
+            Err(error) => {
+                tracing::error!(%error, "failed to serialize the Inertia page");
+                return text(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error");
+            }
+        },
+    };
 
     let html = config.render_root_view(&View {
         page,
