@@ -57,7 +57,7 @@ impl ProvidesScrollMetadata for ScrollMetadata {
     }
 }
 
-/// A page of items, serialized like Laravel's length-aware paginator.
+/// A page of items with total counts and page-number metadata.
 #[derive(Debug, Clone, Serialize)]
 pub struct Paginator<T> {
     /// The items on the current page.

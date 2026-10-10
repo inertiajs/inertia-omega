@@ -20,8 +20,8 @@ use crate::view::View;
 /// A page render.
 ///
 /// Return it from a handler: the adapter resolves the props and builds the
-/// HTML document or JSON page once the handler is done, much like a Laravel
-/// `Responsable`. Use [`Response::into_http`] to do so directly.
+/// HTML document or JSON page once the handler is done.
+/// Use [`Response::into_http`] to do so directly.
 ///
 /// ```no_run
 /// # use inertia::{Inertia, props};
@@ -178,6 +178,7 @@ impl Response {
         } else {
             document(&inertia, &page, &view_data, ssr).await
         };
+
         for (name, value) in &headers {
             response.headers_mut().insert(name, value.clone());
         }
