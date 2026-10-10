@@ -130,7 +130,7 @@ impl Request {
     }
 
     /// Whether the client is prefetching the page: `Purpose`, `Sec-Purpose`
-    /// or `X-Moz` is `prefetch`, in any case, as Laravel checks.
+    /// or `X-Moz` is `prefetch`, compared case-insensitively.
     pub fn is_prefetch(&self) -> bool {
         [inertia::PURPOSE, SEC_PURPOSE, X_MOZ]
             .iter()
@@ -143,7 +143,7 @@ impl Request {
     }
 }
 
-// Browsers' own prefetch headers, which aren't part of the Inertia protocol.
+// Browsers' own prefetch headers aren't part of the Inertia protocol...
 const SEC_PURPOSE: HeaderName = HeaderName::from_static("sec-purpose");
 const X_MOZ: HeaderName = HeaderName::from_static("x-moz");
 

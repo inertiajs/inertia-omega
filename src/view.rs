@@ -33,8 +33,7 @@ where
     }
 }
 
-/// What a [`RootView`] renders: the equivalent of Laravel's `@inertiaHead`
-/// and `@inertia` directives, and the view data.
+/// The page, head elements, app markup and template data a [`RootView`] renders.
 #[derive(Debug)]
 pub struct View<'a> {
     /// The page object.

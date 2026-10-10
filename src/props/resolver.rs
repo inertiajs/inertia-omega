@@ -69,11 +69,11 @@ impl<'a> PropsResolver<'a> {
             }
         }
 
-        let mut all = shared;
-        all.0.extend(props.0);
+        let mut combined_props = shared;
+        combined_props.0.extend(props.0);
 
-        let all = unpack_dot_keys(all).await?;
-        let resolved = self.resolve_props(all, String::new(), false).await?;
+        let combined_props = unpack_dot_keys(combined_props).await?;
+        let resolved = self.resolve_props(combined_props, String::new(), false).await?;
 
         Ok((resolved, self.metadata))
     }
@@ -81,7 +81,7 @@ impl<'a> PropsResolver<'a> {
     /// Recursively resolve a level of the props tree.
     ///
     /// Sibling callbacks run concurrently, while metadata is still collected
-    /// in prop order so the page object matches the Laravel adapter's.
+    /// in prop order for protocol compatibility.
     fn resolve_props(
         &mut self,
         props: Props,
@@ -99,14 +99,11 @@ impl<'a> PropsResolver<'a> {
                     format!("{prefix}.{key}")
                 };
 
-                // Partial reloads only include the props they ask for. Always
-                // props, and the children of resolved values, are exempt.
                 if !self.is_included_in_partial_reload(&options, &path, parent_was_resolved) {
                     continue;
                 }
 
-                // Optional, deferred and already loaded once props are left out
-                // of full visits, without running their callbacks.
+                // Excluded props announce metadata without running their callbacks...
                 if !self.is_partial && self.is_excluded_from_full_visit(&options, &path) {
                     plans.push(Plan::Excluded { path, options });
                     continue;
@@ -346,7 +343,7 @@ impl<'a> PropsResolver<'a> {
             return;
         }
 
-        // Second precision, like the Laravel adapter.
+        // Expiry is expressed in milliseconds, but truncated to whole seconds...
         let expires_at = once.ttl.map(|ttl| {
             let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
 
@@ -403,7 +400,7 @@ fn set_nested<'a>(props: &'a mut Props, segments: &'a [&'a str], prop: Prop) -> 
                 source: Source::Props(nested),
                 ..
             }) => return set_nested(nested, rest, prop).await,
-            // A plain value or callback is resolved so the key can be set inside it.
+            // Resolve plain values before inserting descendants so existing siblings survive...
             Some(existing) if is_plain(&existing.options) => {
                 let source = std::mem::replace(&mut existing.source, Source::Value(Value::Null));
                 into_props(source).await?.unwrap_or_default()

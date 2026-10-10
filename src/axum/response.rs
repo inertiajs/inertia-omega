@@ -12,9 +12,8 @@ use http::{StatusCode, header};
 struct PendingRender(Arc<Mutex<Option<crate::Response>>>);
 
 /// Returning a render from a handler hands it to the [`InertiaLayer`](super::InertiaLayer),
-/// which resolves its props once the handler is done, much like a Laravel
-/// `Responsable`. Status codes, headers and extensions set around the render
-/// are kept:
+/// which resolves its props once the handler is done. Status codes, headers
+/// and extensions set around the render are kept:
 ///
 /// ```no_run
 /// # use axum::{http::StatusCode, response::IntoResponse};

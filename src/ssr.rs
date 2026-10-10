@@ -197,8 +197,7 @@ impl Gateway for HttpGateway {
         let response = match self.client.post(&url).json(page).send().await {
             Ok(response) => response,
             Err(error) => {
-                // Warn once: an SSR server that isn't running is a setup
-                // issue, not something to repeat on every request.
+                // Warn once to avoid flooding logs while the SSR server is unavailable...
                 if !WARNED_UNREACHABLE.swap(true, Ordering::Relaxed) {
                     tracing::warn!(%url, %error, "the Inertia SSR server is unreachable; rendering on the client");
                 } else {
@@ -215,7 +214,7 @@ impl Gateway for HttpGateway {
             return None;
         }
 
-        // The Vite plugin responds with `null` while it warms up.
+        // The Vite plugin responds with `null` while it warms up...
         match response.json::<Option<Response>>().await {
             Ok(rendered) => rendered.map(|Response { head, body }| Rendered {
                 head: head.join("\n"),

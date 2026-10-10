@@ -30,7 +30,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(home))
         .layer(InertiaLayer::new(config))
-        // The session layer goes outside of the Inertia layer.
+        // The session layer wraps Inertia so the session is available during rendering...
         .layer(SessionManagerLayer::new(MemoryStore::default()).with_secure(false));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();

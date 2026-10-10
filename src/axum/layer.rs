@@ -90,8 +90,7 @@ impl InertiaLayer {
     {
         let (mut parts, body) = request.into_parts();
 
-        // Nested routers strip their prefix from the URI; the page URL
-        // should be the one the browser visited.
+        // Nested routers strip URI prefixes; the page URL must retain the browser's original path...
         let uri = parts
             .extensions
             .get::<OriginalUri>()
@@ -180,9 +179,9 @@ where
     }
 
     fn call(&mut self, request: http::Request<Body>) -> Self::Future {
-        // Call the service that was polled ready, leaving a fresh clone behind.
-        let ready = self.inner.clone();
-        let mut inner = std::mem::replace(&mut self.inner, ready);
+        // Call the service that was polled ready, leaving a clone behind...
+        let replacement = self.inner.clone();
+        let mut inner = std::mem::replace(&mut self.inner, replacement);
         let layer = self.layer.clone();
 
         Box::pin(async move { layer.handle(request, |request| inner.call(request)).await })

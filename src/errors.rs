@@ -142,9 +142,8 @@ impl ErrorBags {
 
 #[cfg(feature = "validator")]
 impl From<validator::ValidationErrors> for ValidationErrors {
-    /// Nested structs' and lists' errors are keyed by their dotted path, as
-    /// Laravel keys them (`items.1.name`). Fields are in alphabetical order,
-    /// since `validator` keeps them in a `HashMap`.
+    /// Nested structs' and lists' errors use dotted paths (`items.1.name`).
+    /// Fields are sorted alphabetically because `validator` stores them in a `HashMap`.
     fn from(errors: validator::ValidationErrors) -> Self {
         fn collect(prefix: &str, errors: &validator::ValidationErrors, into: &mut ValidationErrors) {
             use validator::ValidationErrorsKind;
@@ -194,8 +193,7 @@ fn invalid(path: &str) -> String {
 
 #[cfg(feature = "garde")]
 impl From<garde::Report> for ValidationErrors {
-    /// Paths are dotted, as Laravel keys them: garde's `items[1].name` is
-    /// `items.1.name`.
+    /// Converts bracketed indices to dotted paths: `items[1].name` becomes `items.1.name`.
     fn from(report: garde::Report) -> Self {
         report
             .iter()
