@@ -2,7 +2,7 @@
 name = "inertia-omega"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.99"
 description = "The Inertia.js server-side protocol for Rust, with a framework-agnostic core and an Axum adapter"
 license = "MIT"
 repository = "https://github.com/inertiajs/inertia-omega"
