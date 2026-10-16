@@ -21,6 +21,8 @@ axum = ["dep:axum", "dep:http-body", "dep:tower-layer", "dep:tower-service"]
 tower-sessions = ["dep:tower-sessions"]
 ## Server-side rendering through an Inertia SSR server over HTTP.
 ssr = ["dep:reqwest"]
+## HTTPS for SSR and Vite dev server URLs, through rustls.
+ssr-tls = ["ssr", "reqwest/rustls"]
 ## `From<validator::ValidationErrors>` for `ValidationErrors`.
 validator = ["dep:validator"]
 ## `From<garde::Report>` for `ValidationErrors`.
@@ -37,7 +39,7 @@ tracing = "0.1"
 axum = { version = "0.8", default-features = false, features = ["original-uri"], optional = true }
 garde = { version = "0.23", default-features = false, optional = true }
 http-body = { version = "1", optional = true }
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"], optional = true }
+reqwest = { version = "0.13", default-features = false, features = ["json"], optional = true }
 tower-layer = { version = "0.3", optional = true }
 tower-service = { version = "0.3", optional = true }
 tower-sessions = { version = "0.15", default-features = false, optional = true }

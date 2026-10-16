@@ -300,6 +300,8 @@ Config::new().ssr(
 
 On first visits the page is rendered by the SSR server, and the client hydrates it. If the server is down or rendering fails, the page is rendered on the client instead. A slow SSR server can still delay the response until its timeout. Implement `ssr::Gateway` to render pages another way.
 
+The gateway speaks plain HTTP, which suits an SSR server on the same machine. Enable the `ssr-tls` feature to reach `https://` URLs, including a Vite dev server that serves over HTTPS.
+
 ## Testing
 
 `AssertablePage` reads a page from a response body (an HTML document or JSON), with assertions modeled on Laravel's `assertInertia`:
@@ -374,6 +376,7 @@ Implement the `Session` trait (`get`, `put`, `pull`) for the framework's session
 | `axum` | ✓ | The Axum adapter |
 | `tower-sessions` | ✓ | `Session` for `tower_sessions::Session` |
 | `ssr` | ✓ | `HttpGateway`, which uses `reqwest` |
+| `ssr-tls` | | HTTPS for `HttpGateway` |
 | `validator` | | `From<validator::ValidationErrors>` for `ValidationErrors` |
 | `garde` | | `From<garde::Report>` for `ValidationErrors` |
 
