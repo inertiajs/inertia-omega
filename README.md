@@ -7,8 +7,8 @@ async fn show(inertia: Inertia, Path(id): Path<u64>, State(db): State<Db>) -> in
     let user = db.find_user(id).await;
 
     inertia.render("Users/Show", props! {
-        "user" => user,
-        "activity" => inertia::defer(move || async move { db.activity_for(id).await }),
+        user,
+        activity => inertia::defer(move || async move { db.activity_for(id).await }),
     })
 }
 ```
@@ -52,7 +52,7 @@ use inertia::{Config, Inertia, props};
 use tower_sessions::{MemoryStore, SessionManagerLayer};
 
 async fn home(inertia: Inertia) -> inertia::Response {
-    inertia.render("Home", props! { "greeting" => "Hello from Rust" })
+    inertia.render("Home", props! { greeting => "Hello from Rust" })
 }
 
 #[tokio::main]
@@ -113,24 +113,27 @@ Status codes and headers set around a render are kept, so an error page is just 
 
 ```rust
 async fn not_found(inertia: Inertia) -> impl IntoResponse {
-    (StatusCode::NOT_FOUND, inertia.render("Error", props! { "status" => 404 }))
+    (StatusCode::NOT_FOUND, inertia.render("Error", props! { status => 404 }))
 }
 ```
 
 ## Props
 
-Any `Serialize` value is a prop. Keys may use dot notation to build nested props, and props can be nested with `props!` as well:
+Any `Serialize` value is a prop. `props!` takes variables by name and `name => value` pairs. Quote a key that isn't a Rust identifier, such as a dot notation path for nested props. `props!` nests as well:
 
 ```rust
 props! {
-    "user" => user,                       // a struct
+    user,                                 // the `user` variable, a struct
+    can_edit => true,
     "auth.user.permissions" => ["edit"],  // nested with dot notation
-    "settings" => props! {                // nested props, with behavior of their own
-        "theme" => "dark",
-        "billing" => inertia::optional(|| async { load_billing().await }),
+    settings => props! {                  // nested props, with behavior of their own
+        theme => "dark",
+        billing => inertia::optional(|| async { load_billing().await }),
     },
 }
 ```
+
+A key is the name as you write it, so `can_edit` stays `can_edit`. When a page expects camelCase, write `canEdit => can_edit`.
 
 Partial reloads (`router.reload({ only: ['user.name'] })`) only resolve the props they ask for, matching nested paths in both directions.
 
@@ -152,9 +155,9 @@ The behaviors compose:
 
 ```rust
 props! {
-    "posts" => inertia::defer(|| async { load_posts().await }).group("feed").merge().match_on("id"),
-    "plans" => inertia::once(|| async { load_plans().await }).until(Duration::from_secs(3600)),
-    "stats" => inertia::try_lazy(|| async { stats_api().await }).deferred().rescue(),
+    posts => inertia::defer(|| async { load_posts().await }).group("feed").merge().match_on("id"),
+    plans => inertia::once(|| async { load_plans().await }).until(Duration::from_secs(3600)),
+    stats => inertia::try_lazy(|| async { stats_api().await }).deferred().rescue(),
 }
 ```
 
@@ -163,7 +166,7 @@ Callbacks are closures returning futures (`FnOnce`), so they can move in owned d
 For infinite scroll, `Paginator` paginates a collection and describes its pages; implement `ProvidesScrollMetadata` for your own paginated types:
 
 ```rust
-"users" => inertia::scroll_with(move || async move {
+users => inertia::scroll_with(move || async move {
     Paginator::from_items(db.users().await, 15, page)
 }),
 ```
@@ -174,8 +177,8 @@ Share data with every page from the config. The callback runs on each render, so
 
 ```rust
 Config::new().share(|_request| props! {
-    "appName" => "Acme",
-    "announcement" => inertia::lazy(|| async { latest_announcement().await }),
+    appName => "Acme",
+    announcement => inertia::lazy(|| async { latest_announcement().await }),
 })
 ```
 

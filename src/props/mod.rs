@@ -161,21 +161,39 @@ impl<T: Serialize> IntoProps for T {
     }
 }
 
-/// Build a set of [`Props`].
+/// Build a set of [`Props`]: from the variables it names, `name => value`
+/// pairs, or `"name" => value` pairs for keys that aren't Rust identifiers,
+/// such as dotted paths.
 ///
 /// ```
+/// let user = "Taylor";
+///
 /// let props = inertia::props! {
-///     "name" => "Taylor",
+///     user,
+///     can_edit => true,
 ///     "auth.user.id" => 1,
-///     "stats" => inertia::defer(|| async { 42 }),
+///     stats => inertia::defer(|| async { 42 }),
 /// };
 /// ```
 #[macro_export]
 macro_rules! props {
-    () => { $crate::Props::new() };
-    ($($key:expr => $value:expr),+ $(,)?) => {{
+    (@insert $props:ident;) => {};
+    (@insert $props:ident; $name:ident => $value:expr $(, $($rest:tt)*)?) => {
+        $props.insert($crate::__private::name(::std::stringify!($name)), $value);
+        $crate::props!(@insert $props; $($($rest)*)?);
+    };
+    (@insert $props:ident; $name:literal => $value:expr $(, $($rest:tt)*)?) => {
+        $props.insert($name, $value);
+        $crate::props!(@insert $props; $($($rest)*)?);
+    };
+    (@insert $props:ident; $name:ident $(, $($rest:tt)*)?) => {
+        $props.insert($crate::__private::name(::std::stringify!($name)), $name);
+        $crate::props!(@insert $props; $($($rest)*)?);
+    };
+    ($($tokens:tt)*) => {{
+        #[allow(unused_mut)]
         let mut props = $crate::Props::new();
-        $( props.insert($key, $value); )+
+        $crate::props!(@insert props; $($tokens)*);
         props
     }};
 }

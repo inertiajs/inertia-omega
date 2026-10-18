@@ -10,7 +10,7 @@
 //! use tower_sessions::{MemoryStore, SessionManagerLayer};
 //!
 //! async fn home(inertia: Inertia) -> inertia::Response {
-//!     inertia.render("Home", props! { "name" => "Taylor" })
+//!     inertia.render("Home", props! { name => "Taylor" })
 //! }
 //!
 //! let app: Router = Router::new()

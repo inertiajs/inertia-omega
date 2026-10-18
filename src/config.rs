@@ -18,7 +18,7 @@ type ResolveUrl = dyn Fn(&Request) -> String + Send + Sync;
 ///
 /// let config = Config::new()
 ///     .version("1")
-///     .share(|_request| props! { "appName" => "Ferris" })
+///     .share(|_request| props! { appName => "Ferris" })
 ///     .root_view(|view: &inertia::View<'_>| {
 ///         format!("<!DOCTYPE html><html><head>{}</head><body>{}</body></html>", view.head, view.body)
 ///     });
