@@ -28,7 +28,7 @@ use crate::session::{Session, SharedSession, key};
 /// ```no_run
 /// # use inertia::{Inertia, props};
 /// fn show(inertia: Inertia) -> inertia::Response {
-///     inertia.render("Users/Show", props! { "user" => "Taylor" })
+///     inertia.render("Users/Show", props! { user => "Taylor" })
 /// }
 /// ```
 #[derive(Clone)]

@@ -19,7 +19,7 @@ struct PendingRender(Arc<Mutex<Option<crate::Response>>>);
 /// # use axum::{http::StatusCode, response::IntoResponse};
 /// # use inertia::{Inertia, props};
 /// async fn missing(inertia: Inertia) -> impl IntoResponse {
-///     (StatusCode::NOT_FOUND, inertia.render("Error", props! { "status" => 404 }))
+///     (StatusCode::NOT_FOUND, inertia.render("Error", props! { status => 404 }))
 /// }
 /// ```
 impl IntoResponse for crate::Response {

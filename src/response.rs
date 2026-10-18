@@ -27,7 +27,7 @@ use crate::view::View;
 /// # use inertia::{Inertia, props};
 /// # fn handler(inertia: Inertia) -> inertia::Response {
 /// inertia
-///     .render("Dashboard", props! { "stats" => [1, 2, 3] })
+///     .render("Dashboard", props! { stats => [1, 2, 3] })
 ///     .with("title", "Dashboard")
 ///     .clear_history()
 /// # }
