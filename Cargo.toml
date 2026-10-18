@@ -8,6 +8,7 @@ license = "MIT"
 repository = "https://github.com/inertiajs/inertia-omega"
 keywords = ["inertia", "axum", "react", "vue", "svelte"]
 categories = ["web-programming", "web-programming::http-server"]
+exclude = ["macros"]
 
 # Code writes `use inertia::…`, whatever the package is called.
 [lib]
@@ -32,6 +33,7 @@ garde = ["dep:garde"]
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 http = "1"
 indexmap = { version = "2", features = ["serde"] }
+inertia-omega-macros = { path = "macros", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 tracing = "0.1"

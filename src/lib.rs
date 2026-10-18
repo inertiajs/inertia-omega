@@ -77,9 +77,5 @@ pub type HttpResponse = http::Response<String>;
 
 #[doc(hidden)]
 pub mod __private {
-    /// A name from an identifier, without the `r#` of a raw one.
-    #[must_use]
-    pub fn name(identifier: &str) -> &str {
-        identifier.strip_prefix("r#").unwrap_or(identifier)
-    }
+    pub use inertia_omega_macros::props;
 }

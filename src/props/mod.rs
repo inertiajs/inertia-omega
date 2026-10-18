@@ -163,7 +163,7 @@ impl<T: Serialize> IntoProps for T {
 
 /// Build a set of [`Props`]: from the variables it names, `name => value`
 /// pairs, or `"name" => value` pairs for keys that aren't Rust identifiers,
-/// such as dotted paths.
+/// such as dotted paths. A key is the name as written.
 ///
 /// ```
 /// let user = "Taylor";
@@ -175,27 +175,31 @@ impl<T: Serialize> IntoProps for T {
 ///     stats => inertia::defer(|| async { 42 }),
 /// };
 /// ```
+///
+/// `if`, `else if`, `else` and `if let` blocks add their props only when
+/// their condition holds:
+///
+/// ```
+/// # let (is_admin, team) = (true, Some("Laravel"));
+/// let props = inertia::props! {
+///     if is_admin {
+///         stats => inertia::defer(|| async { 42 }),
+///     } else {
+///         upgrade => "Upgrade to see stats",
+///     }
+///     if let Some(team) = team {
+///         team,
+///     }
+/// };
+///
+/// assert!(props.contains_key("stats") && props.contains_key("team"));
+/// assert!(!props.contains_key("upgrade"));
+/// ```
 #[macro_export]
 macro_rules! props {
-    (@insert $props:ident;) => {};
-    (@insert $props:ident; $name:ident => $value:expr $(, $($rest:tt)*)?) => {
-        $props.insert($crate::__private::name(::std::stringify!($name)), $value);
-        $crate::props!(@insert $props; $($($rest)*)?);
+    ($($tokens:tt)*) => {
+        $crate::__private::props!($crate; $($tokens)*)
     };
-    (@insert $props:ident; $name:literal => $value:expr $(, $($rest:tt)*)?) => {
-        $props.insert($name, $value);
-        $crate::props!(@insert $props; $($($rest)*)?);
-    };
-    (@insert $props:ident; $name:ident $(, $($rest:tt)*)?) => {
-        $props.insert($crate::__private::name(::std::stringify!($name)), $name);
-        $crate::props!(@insert $props; $($($rest)*)?);
-    };
-    ($($tokens:tt)*) => {{
-        #[allow(unused_mut)]
-        let mut props = $crate::Props::new();
-        $crate::props!(@insert props; $($tokens)*);
-        props
-    }};
 }
 
 /// A prop computed by a callback, which only runs when the prop is part of

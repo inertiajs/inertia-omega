@@ -1,0 +1,19 @@
+[package]
+name = "inertia-omega-macros"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+description = "The procedural macros of `inertia-omega`, re-exported by it"
+license = "MIT"
+repository = "https://github.com/inertiajs/inertia-omega"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", default-features = false, features = ["full", "parsing", "proc-macro", "printing"] }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

@@ -135,6 +135,24 @@ props! {
 
 A key is the name as you write it, so `can_edit` stays `can_edit`. When a page expects camelCase, write `canEdit => can_edit`.
 
+An `if` block adds its props only when its condition holds, and `else if`, `else` and `if let` work as they do in Rust:
+
+```rust
+props! {
+    user,
+    if user.is_admin {
+        stats => inertia::defer(|| async { load_stats().await }),
+    } else {
+        upgrade_url => "/billing",
+    }
+    if let Some(team) = user.team {
+        team,
+    }
+}
+```
+
+A prop in a block whose condition doesn't hold isn't sent at all, unlike an `Option` prop, which is sent as `null`.
+
 Partial reloads (`router.reload({ only: ['user.name'] })`) only resolve the props they ask for, matching nested paths in both directions.
 
 The functions at the crate root create props with special behavior, which builder methods refine further:
