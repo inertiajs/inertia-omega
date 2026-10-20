@@ -34,7 +34,7 @@ pub struct Config {
     pub(crate) encrypt_history: bool,
     pub(crate) expose_shared_prop_keys: bool,
     pub(crate) preserve_big_integers: bool,
-    pub(crate) with_all_errors: bool,
+    pub(crate) all_errors: bool,
 }
 
 #[derive(Clone)]
@@ -56,7 +56,7 @@ impl Config {
             encrypt_history: false,
             expose_shared_prop_keys: true,
             preserve_big_integers: false,
-            with_all_errors: false,
+            all_errors: false,
         }
     }
 
@@ -140,8 +140,8 @@ impl Config {
     }
 
     /// Share every validation message per field, instead of only the first.
-    pub fn with_all_errors(mut self, all: bool) -> Self {
-        self.with_all_errors = all;
+    pub fn all_errors(mut self, all: bool) -> Self {
+        self.all_errors = all;
         self
     }
 }
@@ -161,7 +161,7 @@ impl fmt::Debug for Config {
             .field("encrypt_history", &self.encrypt_history)
             .field("expose_shared_prop_keys", &self.expose_shared_prop_keys)
             .field("preserve_big_integers", &self.preserve_big_integers)
-            .field("with_all_errors", &self.with_all_errors)
+            .field("all_errors", &self.all_errors)
             .finish_non_exhaustive()
     }
 }

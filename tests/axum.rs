@@ -284,7 +284,7 @@ async fn flash_data_and_errors_survive_a_redirect() {
 #[cfg(feature = "tower-sessions")]
 #[tokio::test]
 async fn errors_are_scoped_to_the_requested_error_bag() {
-    let app = app(config().with_all_errors(true));
+    let app = app(config().all_errors(true));
 
     let response = send(
         &app,

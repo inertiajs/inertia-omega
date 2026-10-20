@@ -215,7 +215,7 @@ impl Response {
         let mut shared = Props::new();
         shared.insert(
             "errors",
-            props::always(errors.to_prop(request.error_bag(), config.with_all_errors)),
+            props::always(errors.to_prop(request.error_bag(), config.all_errors)),
         );
         for share in &config.shares {
             shared.extend(share(request));

@@ -241,7 +241,7 @@ async fn store(inertia: Inertia, Json(form): Json<NewUser>) -> HttpResponse {
 }
 ```
 
-- **Error bags.** Forms with an `errorBag` get their errors scoped under it (`errors.createUser.name`). `Config::with_all_errors(true)` shares every message per field instead of the first.
+- **Error bags.** Forms with an `errorBag` get their errors scoped under it (`errors.createUser.name`). `Config::all_errors(true)` shares every message per field instead of the first.
 - **Validation crates.** With the `validator` or `garde` features, their errors convert into `ValidationErrors` with `.into()`.
 - **Flash data** is delivered in the page's `flash` field, not its props, so it isn't kept in the browser history.
 
