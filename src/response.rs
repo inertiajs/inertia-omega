@@ -20,14 +20,14 @@ use crate::view::View;
 /// A page render.
 ///
 /// Return it from a handler: the adapter resolves the props and builds the
-/// HTML document or JSON page once the handler is done, much like a Laravel
-/// `Responsable`. Use [`Response::into_http`] to do so directly.
+/// HTML document or JSON page once the handler is done.
+/// Use [`Response::into_http`] to do so directly.
 ///
 /// ```no_run
 /// # use inertia::{Inertia, props};
 /// # fn handler(inertia: Inertia) -> inertia::Response {
 /// inertia
-///     .render("Dashboard", props! { "stats" => [1, 2, 3] })
+///     .render("Dashboard", props! { stats => [1, 2, 3] })
 ///     .with("title", "Dashboard")
 ///     .clear_history()
 /// # }
@@ -178,6 +178,7 @@ impl Response {
         } else {
             document(&inertia, &page, &view_data, ssr).await
         };
+
         for (name, value) in &headers {
             response.headers_mut().insert(name, value.clone());
         }
@@ -214,7 +215,7 @@ impl Response {
         let mut shared = Props::new();
         shared.insert(
             "errors",
-            props::always(errors.to_prop(request.error_bag(), config.with_all_errors)),
+            props::always(errors.to_prop(request.error_bag(), config.all_errors)),
         );
         for share in &config.shares {
             shared.extend(share(request));

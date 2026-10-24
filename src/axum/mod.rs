@@ -10,13 +10,13 @@
 //! use tower_sessions::{MemoryStore, SessionManagerLayer};
 //!
 //! async fn home(inertia: Inertia) -> inertia::Response {
-//!     inertia.render("Home", props! { "name" => "Taylor" })
+//!     inertia.render("Home", props! { name => "Taylor" })
 //! }
 //!
 //! let app: Router = Router::new()
 //!     .route("/", get(home))
 //!     .layer(InertiaLayer::new(Config::new().version("1")))
-//!     // Outside of the Inertia layer, so the session is available to it.
+//!     // The session layer wraps Inertia so the session is available during rendering...
 //!     .layer(SessionManagerLayer::new(MemoryStore::default()));
 //! ```
 //!

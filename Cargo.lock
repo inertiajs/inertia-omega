@@ -726,6 +726,7 @@ dependencies = [
  "http-body",
  "http-body-util",
  "indexmap",
+ "inertia-omega-macros",
  "reqwest",
  "serde",
  "serde_json",
@@ -736,6 +737,15 @@ dependencies = [
  "tower-sessions",
  "tracing",
  "validator",
+]
+
+[[package]]
+name = "inertia-omega-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

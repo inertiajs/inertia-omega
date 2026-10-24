@@ -64,11 +64,11 @@ impl<'a> PropsResolver<'a> {
             }
         }
 
-        let mut all = shared;
-        all.0.extend(props.0);
+        let mut combined_props = shared;
+        combined_props.0.extend(props.0);
 
-        let all = unpack_dot_keys(all)?;
-        let (resolved, mut metadata) = self.resolve_props(all, String::new(), false).await?;
+        let combined_props = unpack_dot_keys(combined_props)?;
+        let (resolved, mut metadata) = self.resolve_props(combined_props, String::new(), false).await?;
         metadata.shared_props = shared_props;
 
         Ok((resolved, metadata))
@@ -77,8 +77,8 @@ impl<'a> PropsResolver<'a> {
     /// Recursively resolve a level of the props tree.
     ///
     /// Every prop of the level resolves concurrently, nested levels
-    /// included, while metadata is still collected in prop order so the
-    /// page object matches the Laravel adapter's.
+    /// included, while metadata is still collected in prop order for
+    /// protocol compatibility.
     fn resolve_props(
         &self,
         props: Props,
@@ -86,8 +86,7 @@ impl<'a> PropsResolver<'a> {
         parent_was_resolved: bool,
     ) -> BoxFuture<'_, Result<Level, PropError>> {
         Box::pin(async move {
-            // The outcomes of excluded props, which are known up front, and
-            // `None` for each included prop, whose future is in `futures`.
+            // Excluded props' outcomes are known up front; included props hold `None` until their future resolves...
             let mut outcomes = Vec::with_capacity(props.len());
             let mut futures = Vec::with_capacity(props.len());
 
@@ -98,14 +97,11 @@ impl<'a> PropsResolver<'a> {
                     format!("{prefix}.{key}")
                 };
 
-                // Partial reloads only include the props they ask for. Always
-                // props, and the children of resolved values, are exempt.
                 if !self.is_included_in_partial_reload(&options, &path, parent_was_resolved) {
                     continue;
                 }
 
-                // Optional, deferred and already loaded once props are left out
-                // of full visits, without running their callbacks.
+                // Excluded props announce metadata without running their callbacks...
                 if !self.is_partial && self.is_excluded_from_full_visit(&options, &path) {
                     let mut metadata = Metadata::default();
                     self.collect_excluded_metadata(&mut metadata, &options, &path);
@@ -191,18 +187,15 @@ impl<'a> PropsResolver<'a> {
 
         self.collect_metadata(&mut metadata, &options, &path);
 
-        // Like the Laravel adapter, which adds always props back after
-        // filtering, an always prop is sent whole: its children are as
-        // exempt from partial filtering as a resolved value's.
-        let is_whole = parent_was_resolved || options.always;
+        let parent_was_resolved = parent_was_resolved || options.always;
 
         let value = match value {
             Resolved::Nested(nested) => {
-                let (nested, children) = self.resolve_props(nested, path, is_whole).await?;
+                let (nested, children) = self.resolve_props(nested, path, parent_was_resolved).await?;
                 metadata.extend(children);
                 Value::Object(nested)
             }
-            Resolved::Literal(value) => self.filter_literal(value, &path, is_whole),
+            Resolved::Literal(value) => self.filter_literal(value, &path, parent_was_resolved),
             Resolved::Computed(value) => value,
         };
 
@@ -360,8 +353,7 @@ impl<'a> PropsResolver<'a> {
             return;
         }
 
-        // Second precision, like the Laravel adapter. Saturating, so a TTL
-        // meaning "forever" (`Duration::MAX`) can't overflow.
+        // Expiry is in milliseconds, truncated to whole seconds and saturating so `Duration::MAX` can't overflow...
         let expires_at = once.ttl.map(|ttl| {
             let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
 
@@ -417,9 +409,7 @@ fn set_nested(props: &mut Props, segments: &[String], prop: Prop) -> Result<(), 
             source: Source::Props(nested),
             ..
         }) => return set_nested(nested, rest, prop),
-        // A plain value is unpacked so the key can be set inside it. A plain
-        // callback keeps the key until it runs, so it still runs only when
-        // the prop is part of the response, concurrently with its siblings.
+        // Unpack plain values; plain callbacks keep the key so they still run only when sent...
         Some(existing) if is_plain(&existing.options) => {
             match std::mem::replace(&mut existing.source, Source::Value(Value::Null)) {
                 Source::Callback(callback) => {

@@ -807,3 +807,42 @@ async fn pages_carry_their_headers_as_json_and_as_documents() {
     assert_eq!(document.headers()["x-page"], "users");
     assert_eq!(document.headers()["cache-control"], "no-store");
 }
+
+#[tokio::test]
+async fn props_take_variables_by_name_beside_named_and_quoted_pairs() {
+    let users = vec!["Taylor"];
+    let r#type = "admin";
+    let props = props! { users, can_edit => true, r#type, "auth.user.id" => 1 };
+
+    let page = resolve(visit(&[]).render("Users", props)).await;
+
+    assert_eq!(page.props["users"], json!(["Taylor"]));
+    assert_eq!(page.props["can_edit"], json!(true));
+    assert_eq!(page.props["type"], json!("admin"));
+    assert_eq!(page.props["auth"]["user"]["id"], json!(1));
+}
+
+#[tokio::test]
+async fn conditional_props_are_only_sent_when_their_condition_holds() {
+    let (role, team, props) = ("editor", Some("Laravel"), vec![1, 2]);
+    let page = props! {
+        if role == "admin" {
+            stats => 1,
+        } else if matches!(role, "editor" | "author") {
+            drafts => props.len(),
+            if let Some(team) = team { team }
+        } else {
+            upgrade => true,
+        }
+        "auth.role" => role,
+    };
+
+    let page = resolve(visit(&[]).render("Users", page)).await;
+
+    assert_eq!(page.props["drafts"], json!(2));
+    assert_eq!(page.props["team"], json!("Laravel"));
+    assert_eq!(page.props["auth"]["role"], json!("editor"));
+    for missing in ["stats", "upgrade"] {
+        assert!(page.props.get(missing).is_none(), "{missing}: {:?}", page.props);
+    }
+}

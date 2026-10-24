@@ -70,7 +70,7 @@ impl<S: Session> DynSession for S {
 
 pub(crate) type SharedSession = Arc<dyn DynSession>;
 
-/// An in-memory session, like Laravel's `array` driver. Clones share their data.
+/// An in-memory session. Clones share their data.
 ///
 /// Useful in tests, or as a starting point for an adapter.
 #[derive(Debug, Clone, Default)]

@@ -1,5 +1,4 @@
-//! The protocol rules an adapter applies around each handler, like the
-//! Laravel adapter's middleware.
+//! The protocol rules an adapter applies around each handler.
 //!
 //! An adapter calls [`before`] ahead of the handler and [`after`] on its
 //! response; everything else is framework-agnostic.

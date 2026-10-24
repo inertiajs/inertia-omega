@@ -17,8 +17,8 @@
 //!
 //! async fn dashboard(inertia: Inertia) -> inertia::Response {
 //!     inertia.render("Dashboard", props! {
-//!         "user" => "Taylor",
-//!         "stats" => inertia::defer(|| async { vec![1, 2, 3] }),
+//!         user => "Taylor",
+//!         stats => inertia::defer(|| async { vec![1, 2, 3] }),
 //!     })
 //! }
 //!
@@ -74,3 +74,8 @@ pub use crate::view::{RootView, View};
 
 /// The HTTP response type of the framework-agnostic core.
 pub type HttpResponse = http::Response<String>;
+
+#[doc(hidden)]
+pub mod __private {
+    pub use inertia_omega_macros::props;
+}

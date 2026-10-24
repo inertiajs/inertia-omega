@@ -21,14 +21,14 @@ use crate::session::{Session, SharedSession, key};
 /// cheap and share state, so props shared or data flashed through one clone
 /// (in a middleware, say) apply to the response rendered through another.
 ///
-/// Like Laravel's session, flash data, validation errors and history flags
-/// are queued during the request and written to the session when it ends,
-/// for the next page render. The next render may be in this same request.
+/// Flash data, validation errors and history flags are queued during the
+/// request and written to the session when it ends, for the next page render.
+/// The next render may be in this same request.
 ///
 /// ```no_run
 /// # use inertia::{Inertia, props};
 /// fn show(inertia: Inertia) -> inertia::Response {
-///     inertia.render("Users/Show", props! { "user" => "Taylor" })
+///     inertia.render("Users/Show", props! { user => "Taylor" })
 /// }
 /// ```
 #[derive(Clone)]
@@ -108,8 +108,9 @@ impl Inertia {
     /// Share a prop with this request's page.
     pub fn share(&self, key: impl Into<String>, value: impl IntoProp) -> &Self {
         let key = key.into();
-        // Prop conversion may serialize application code that shares more data.
+        // Convert before locking: application serialization may share more data...
         let value = value.into_prop();
+
         self.pending().shared.insert(key, value);
         self
     }

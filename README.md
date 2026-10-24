@@ -7,8 +7,8 @@ async fn show(inertia: Inertia, Path(id): Path<u64>, State(db): State<Db>) -> in
     let user = db.find_user(id).await;
 
     inertia.render("Users/Show", props! {
-        "user" => user,
-        "activity" => inertia::defer(move || async move { db.activity_for(id).await }),
+        user,
+        activity => inertia::defer(move || async move { db.activity_for(id).await }),
     })
 }
 ```
@@ -52,7 +52,7 @@ use inertia::{Config, Inertia, props};
 use tower_sessions::{MemoryStore, SessionManagerLayer};
 
 async fn home(inertia: Inertia) -> inertia::Response {
-    inertia.render("Home", props! { "greeting" => "Hello from Rust" })
+    inertia.render("Home", props! { greeting => "Hello from Rust" })
 }
 
 #[tokio::main]
@@ -113,24 +113,45 @@ Status codes and headers set around a render are kept, so an error page is just 
 
 ```rust
 async fn not_found(inertia: Inertia) -> impl IntoResponse {
-    (StatusCode::NOT_FOUND, inertia.render("Error", props! { "status" => 404 }))
+    (StatusCode::NOT_FOUND, inertia.render("Error", props! { status => 404 }))
 }
 ```
 
 ## Props
 
-Any `Serialize` value is a prop. Keys may use dot notation to build nested props, and props can be nested with `props!` as well:
+Any `Serialize` value is a prop. `props!` takes variables by name and `name => value` pairs. Quote a key that isn't a Rust identifier, such as a dot notation path for nested props. `props!` nests as well:
 
 ```rust
 props! {
-    "user" => user,                       // a struct
+    user,                                 // the `user` variable, a struct
+    can_edit => true,
     "auth.user.permissions" => ["edit"],  // nested with dot notation
-    "settings" => props! {                // nested props, with behavior of their own
-        "theme" => "dark",
-        "billing" => inertia::optional(|| async { load_billing().await }),
+    settings => props! {                  // nested props, with behavior of their own
+        theme => "dark",
+        billing => inertia::optional(|| async { load_billing().await }),
     },
 }
 ```
+
+A key is the name as you write it, so `can_edit` stays `can_edit`. When a page expects camelCase, write `canEdit => can_edit`.
+
+An `if` block adds its props only when its condition holds, and `else if`, `else` and `if let` work as they do in Rust:
+
+```rust
+props! {
+    user,
+    if user.is_admin {
+        stats => inertia::defer(|| async { load_stats().await }),
+    } else {
+        upgrade_url => "/billing",
+    }
+    if let Some(team) = user.team {
+        team,
+    }
+}
+```
+
+A prop in a block whose condition doesn't hold isn't sent at all, unlike an `Option` prop, which is sent as `null`.
 
 Partial reloads (`router.reload({ only: ['user.name'] })`) only resolve the props they ask for, matching nested paths in both directions.
 
@@ -152,9 +173,9 @@ The behaviors compose:
 
 ```rust
 props! {
-    "posts" => inertia::defer(|| async { load_posts().await }).group("feed").merge().match_on("id"),
-    "plans" => inertia::once(|| async { load_plans().await }).until(Duration::from_secs(3600)),
-    "stats" => inertia::try_lazy(|| async { stats_api().await }).deferred().rescue(),
+    posts => inertia::defer(|| async { load_posts().await }).group("feed").merge().match_on("id"),
+    plans => inertia::once(|| async { load_plans().await }).until(Duration::from_secs(3600)),
+    stats => inertia::try_lazy(|| async { stats_api().await }).deferred().rescue(),
 }
 ```
 
@@ -163,7 +184,7 @@ Callbacks are closures returning futures (`FnOnce`), so they can move in owned d
 For infinite scroll, `Paginator` paginates a collection and describes its pages; implement `ProvidesScrollMetadata` for your own paginated types:
 
 ```rust
-"users" => inertia::scroll_with(move || async move {
+users => inertia::scroll_with(move || async move {
     Paginator::from_items(db.users().await, 15, page)
 }),
 ```
@@ -174,8 +195,8 @@ Share data with every page from the config. The callback runs on each render, so
 
 ```rust
 Config::new().share(|_request| props! {
-    "appName" => "Acme",
-    "announcement" => inertia::lazy(|| async { latest_announcement().await }),
+    appName => "Acme",
+    announcement => inertia::lazy(|| async { latest_announcement().await }),
 })
 ```
 
@@ -220,7 +241,7 @@ async fn store(inertia: Inertia, Json(form): Json<NewUser>) -> HttpResponse {
 }
 ```
 
-- **Error bags.** Forms with an `errorBag` get their errors scoped under it (`errors.createUser.name`). `Config::with_all_errors(true)` shares every message per field instead of the first.
+- **Error bags.** Forms with an `errorBag` get their errors scoped under it (`errors.createUser.name`). `Config::all_errors(true)` shares every message per field instead of the first.
 - **Validation crates.** With the `validator` or `garde` features, their errors convert into `ValidationErrors` with `.into()`.
 - **Flash data** is delivered in the page's `flash` field, not its props, so it isn't kept in the browser history.
 
@@ -300,6 +321,8 @@ Config::new().ssr(
 
 On first visits the page is rendered by the SSR server, and the client hydrates it. If the server is down or rendering fails, the page is rendered on the client instead. A slow SSR server can still delay the response until its timeout. Implement `ssr::Gateway` to render pages another way.
 
+The gateway speaks plain HTTP, which suits an SSR server on the same machine. Enable the `ssr-tls` feature to reach `https://` URLs, including a Vite dev server that serves over HTTPS.
+
 ## Testing
 
 `AssertablePage` reads a page from a response body (an HTML document or JSON), with assertions modeled on Laravel's `assertInertia`:
@@ -374,6 +397,7 @@ Implement the `Session` trait (`get`, `put`, `pull`) for the framework's session
 | `axum` | ✓ | The Axum adapter |
 | `tower-sessions` | ✓ | `Session` for `tower_sessions::Session` |
 | `ssr` | ✓ | `HttpGateway`, which uses `reqwest` |
+| `ssr-tls` | | HTTPS for `HttpGateway` |
 | `validator` | | `From<validator::ValidationErrors>` for `ValidationErrors` |
 | `garde` | | `From<garde::Report>` for `ValidationErrors` |
 

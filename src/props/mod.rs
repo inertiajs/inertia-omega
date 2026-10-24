@@ -185,23 +185,45 @@ impl<T: Serialize> IntoProps for T {
     }
 }
 
-/// Build a set of [`Props`].
+/// Build a set of [`Props`]: from the variables it names, `name => value`
+/// pairs, or `"name" => value` pairs for keys that aren't Rust identifiers,
+/// such as dotted paths. A key is the name as written.
 ///
 /// ```
+/// let user = "Taylor";
+///
 /// let props = inertia::props! {
-///     "name" => "Taylor",
+///     user,
+///     can_edit => true,
 ///     "auth.user.id" => 1,
-///     "stats" => inertia::defer(|| async { 42 }),
+///     stats => inertia::defer(|| async { 42 }),
 /// };
+/// ```
+///
+/// `if`, `else if`, `else` and `if let` blocks add their props only when
+/// their condition holds:
+///
+/// ```
+/// # let (is_admin, team) = (true, Some("Laravel"));
+/// let props = inertia::props! {
+///     if is_admin {
+///         stats => inertia::defer(|| async { 42 }),
+///     } else {
+///         upgrade => "Upgrade to see stats",
+///     }
+///     if let Some(team) = team {
+///         team,
+///     }
+/// };
+///
+/// assert!(props.contains_key("stats") && props.contains_key("team"));
+/// assert!(!props.contains_key("upgrade"));
 /// ```
 #[macro_export]
 macro_rules! props {
-    () => { $crate::Props::new() };
-    ($($key:expr => $value:expr),+ $(,)?) => {{
-        let mut props = $crate::Props::new();
-        $( props.insert($key, $value); )+
-        props
-    }};
+    ($($tokens:tt)*) => {
+        $crate::__private::props!($crate; $($tokens)*)
+    };
 }
 
 /// A prop computed by a callback, which only runs when the prop is part of

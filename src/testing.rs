@@ -1,4 +1,4 @@
-//! Assertions for testing Inertia pages, inspired by Laravel's `assertInertia`.
+//! Assertions for testing Inertia pages.
 //!
 //! ```
 //! use inertia::testing::AssertablePage;
@@ -172,7 +172,7 @@ fn page_script(html: &str) -> &str {
         .and_then(|(_, rest)| rest.split_once('>'))
         .and_then(|(_, rest)| rest.split_once("</script>"))
     else {
-        // Not in a closure, which `#[track_caller]` doesn't reach.
+        // Keep the panic outside a closure so #[track_caller] reaches the test...
         panic!("the HTML document doesn't contain Inertia page data\n\n{html}")
     };
     json

@@ -2,12 +2,13 @@
 name = "inertia-omega"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.99"
 description = "The Inertia.js server-side protocol for Rust, with a framework-agnostic core and an Axum adapter"
 license = "MIT"
 repository = "https://github.com/inertiajs/inertia-omega"
 keywords = ["inertia", "axum", "react", "vue", "svelte"]
 categories = ["web-programming", "web-programming::http-server"]
+exclude = ["macros"]
 
 # Code writes `use inertia::…`, whatever the package is called.
 [lib]
@@ -21,6 +22,8 @@ axum = ["dep:axum", "dep:http-body", "dep:tower-layer", "dep:tower-service"]
 tower-sessions = ["dep:tower-sessions"]
 ## Server-side rendering through an Inertia SSR server over HTTP.
 ssr = ["dep:reqwest"]
+## HTTPS for SSR and Vite dev server URLs, through rustls.
+ssr-tls = ["ssr", "reqwest/rustls"]
 ## `From<validator::ValidationErrors>` for `ValidationErrors`.
 validator = ["dep:validator"]
 ## `From<garde::Report>` for `ValidationErrors`.
@@ -30,6 +33,7 @@ garde = ["dep:garde"]
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 http = "1"
 indexmap = { version = "2", features = ["serde"] }
+inertia-omega-macros = { path = "macros", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 tracing = "0.1"
@@ -37,7 +41,7 @@ tracing = "0.1"
 axum = { version = "0.8", default-features = false, features = ["original-uri"], optional = true }
 garde = { version = "0.23", default-features = false, optional = true }
 http-body = { version = "1", optional = true }
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"], optional = true }
+reqwest = { version = "0.13", default-features = false, features = ["json"], optional = true }
 tower-layer = { version = "0.3", optional = true }
 tower-service = { version = "0.3", optional = true }
 tower-sessions = { version = "0.15", default-features = false, optional = true }

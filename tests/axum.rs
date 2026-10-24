@@ -332,7 +332,7 @@ async fn renders_without_flash_data_leave_the_session_alone() {
 #[cfg(feature = "tower-sessions")]
 #[tokio::test]
 async fn errors_are_scoped_to_the_requested_error_bag() {
-    let app = app(config().with_all_errors(true));
+    let app = app(config().all_errors(true));
 
     let response = send(
         &app,

@@ -24,15 +24,14 @@ impl Drop for Slot {
 }
 
 /// Returning a render from a handler hands it to the [`InertiaLayer`](super::InertiaLayer),
-/// which resolves its props once the handler is done, much like a Laravel
-/// `Responsable`. Status codes, headers and extensions set around the render
-/// are kept:
+/// which resolves its props once the handler is done. Status codes, headers
+/// and extensions set around the render are kept:
 ///
 /// ```no_run
 /// # use axum::{http::StatusCode, response::IntoResponse};
 /// # use inertia::{Inertia, props};
 /// async fn missing(inertia: Inertia) -> impl IntoResponse {
-///     (StatusCode::NOT_FOUND, inertia.render("Error", props! { "status" => 404 }))
+///     (StatusCode::NOT_FOUND, inertia.render("Error", props! { status => 404 }))
 /// }
 /// ```
 impl IntoResponse for crate::Response {
