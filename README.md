@@ -162,7 +162,7 @@ The functions at the crate root create props with special behavior, which builde
 | `inertia::lazy(\|\| async { .. })` | Computed only when the prop is part of the response. |
 | `inertia::optional(..)` | Only sent when a partial reload asks for it. |
 | `inertia::defer(..)` | Left out of the first render; the client fetches it right after. `.group("name")` loads deferred props in parallel groups. |
-| `inertia::always(value)` | Sent whole with every response, even partial reloads that didn't ask for it. |
+| `inertia::always(value)` | Sent with every response, even partial reloads that didn't ask for it. |
 | `inertia::merge(value)` | Appended to its client-side value. `.prepend()`, `.append_at("data")`, `.prepend_at("data")`, `.match_on("id")`. |
 | `inertia::deep_merge(value)` | Deep merged with its client-side value. |
 | `inertia::once(..)` | Resolved once and remembered by the client. `.once_as("key")`, `.until(duration)`, `.fresh()`. |

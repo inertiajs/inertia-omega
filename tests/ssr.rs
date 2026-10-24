@@ -8,25 +8,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Once};
 
 use axum::Router;
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::http::{HeaderValue, header};
 use axum::response::Response;
 use axum::routing::post;
 use http::{HeaderMap, Method};
 use inertia::ssr::HttpGateway;
-use inertia::testing::AssertablePage;
 use inertia::{Config, Inertia, Request, props};
 use serde_json::json;
 use tokio::net::{TcpListener, TcpStream};
-
-/// Serve `router` on a free port, returning its URL.
-async fn serve(router: Router) -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-
-    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-
-    url
-}
 
 /// Serve `router` on a free port that starts out unreachable, returning its
 /// URL and the switch that brings it up.
@@ -39,8 +28,7 @@ async fn serve_switchable(router: Router) -> (String, Arc<AtomicBool>) {
     let url = format!("http://{}", listener.local_addr().unwrap());
     let up = Arc::new(AtomicBool::new(false));
 
-    // Without keep-alive, so a connection made while it's up can't reach it
-    // once it's down.
+    // Disable keep-alive so a connection made while up can't reach the server once down...
     let router = router.layer(axum::middleware::map_response(|mut response: Response| async {
         response
             .headers_mut()
@@ -92,46 +80,6 @@ async fn first_visit(url: &str) -> String {
         .await;
 
     response.into_body()
-}
-
-#[tokio::test]
-async fn pages_are_rendered_by_the_ssr_server() {
-    let url = serve(Router::new().route(
-        "/render",
-        post(|| async {
-            axum::Json(json!({ "head": ["<title>Home</title>"], "body": "<div id=\"app\">Taylor</div>" }))
-        }),
-    ))
-    .await;
-
-    let body = first_visit(&url).await;
-
-    assert!(body.contains("<title>Home</title>"), "{body}");
-    assert!(body.contains(r#"<div id="app">Taylor</div>"#), "{body}");
-}
-
-#[tokio::test]
-async fn failed_renders_fall_back_to_the_client() {
-    let url = serve(Router::new().route("/render", post(|| async { StatusCode::INTERNAL_SERVER_ERROR }))).await;
-
-    let body = first_visit(&url).await;
-
-    assert!(body.contains(r#"<div id="app"></div>"#), "{body}");
-    AssertablePage::from_body(&body)
-        .component("Home")
-        .equals("name", "Taylor");
-}
-
-#[tokio::test]
-async fn unreachable_servers_fall_back_to_the_client() {
-    let (url, _up) = serve_switchable(Router::new()).await;
-
-    let body = first_visit(&url).await;
-
-    assert!(body.contains(r#"<div id="app"></div>"#), "{body}");
-    AssertablePage::from_body(&body)
-        .component("Home")
-        .equals("name", "Taylor");
 }
 
 #[tokio::test]

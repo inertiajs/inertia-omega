@@ -156,8 +156,7 @@ impl Default for Config {
 impl fmt::Debug for Config {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Config")
-            // Not `current_version`: formatting shouldn't run the app's
-            // callback, which may hash a file.
+            // Formatting must not run the app's version callback, which may hash a file...
             .field(
                 "version",
                 &match &self.version {

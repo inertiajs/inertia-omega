@@ -66,8 +66,7 @@ impl fmt::Display for PropError {
 
 impl std::error::Error for PropError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        // `Display` already shows the wrapped error, so reporting it as the
-        // source too would print its message twice in an error chain.
+        // `Display` already shows the wrapped error, so a source would print it twice in an error chain...
         self.0.source()
     }
 }

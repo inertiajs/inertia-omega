@@ -98,8 +98,7 @@ impl InertiaLayer {
         let request = Request::new(parts.method.clone(), uri, parts.headers.clone());
         let inertia = Inertia::build(Arc::clone(&self.config), request, (self.session)(&parts));
 
-        // Through the handle, so the version the check computes is the one
-        // the page gets, not computed a second time.
+        // Check through the handle so the page reuses this version instead of computing it again...
         if let Some(response) = protocol::version_conflict(inertia.request(), || inertia.version()) {
             return Ok(response.map(Body::from));
         }

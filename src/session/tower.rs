@@ -20,9 +20,7 @@ impl Session for tower_sessions::Session {
     }
 
     async fn pull(&self, key: &str) -> Option<Value> {
-        // Removing marks the session modified even when the key is missing,
-        // which would have every page render save the session, and so
-        // overwrite changes a concurrent request made to it.
+        // Removing marks the session modified even for missing keys, so every render would save and clobber concurrent changes...
         Session::get(self, key).await?;
 
         self.remove::<Value>(key)

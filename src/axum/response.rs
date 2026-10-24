@@ -15,8 +15,7 @@ struct Slot(Mutex<Option<crate::Response>>);
 
 impl Drop for Slot {
     fn drop(&mut self) {
-        // Still here: no layer took it, so the client got an empty `200`.
-        // Say so, since nothing else would.
+        // No layer took the render, so the client got an empty `200`; nothing else reports it...
         if self.0.get_mut().unwrap_or_else(PoisonError::into_inner).is_some() {
             tracing::error!("an Inertia render was returned from a route without an `InertiaLayer`");
         }

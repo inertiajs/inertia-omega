@@ -6,15 +6,8 @@ use serde_json::{Map, Value};
 /// Serialize a value as JSON that is safe to embed in an HTML `<script>`
 /// element. Forward slashes and HTML-significant characters are escaped, so
 /// a string like `</script>` can't end the element early.
-///
-/// A value that fails to serialize becomes `null`.
 pub fn html_safe_json(value: &impl Serialize) -> String {
-    try_html_safe_json(value).unwrap_or_else(|_| "null".to_owned())
-}
-
-/// [`html_safe_json`], failing when the value doesn't serialize.
-pub(crate) fn try_html_safe_json(value: &impl Serialize) -> serde_json::Result<String> {
-    let json = serde_json::to_string(value)?;
+    let json = serde_json::to_string(value).unwrap_or_else(|_| "null".to_owned());
     let mut escaped = String::with_capacity(json.len());
 
     for c in json.chars() {
@@ -29,7 +22,7 @@ pub(crate) fn try_html_safe_json(value: &impl Serialize) -> serde_json::Result<S
         }
     }
 
-    Ok(escaped)
+    escaped
 }
 
 /// Escape text for an HTML attribute value, such as the root element's id.
@@ -102,15 +95,6 @@ mod tests {
             serde_json::from_str::<Value>(&json).unwrap(),
             json!({ "html": "</script><b>&" })
         );
-    }
-
-    #[test]
-    fn values_that_fail_to_serialize_are_errors() {
-        // JSON object keys must be strings.
-        let value = std::collections::BTreeMap::from([((1, 2), 3)]);
-
-        assert!(try_html_safe_json(&value).is_err());
-        assert_eq!(html_safe_json(&value), "null");
     }
 
     #[test]

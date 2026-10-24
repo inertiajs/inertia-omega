@@ -64,8 +64,7 @@ fn remember<T: Clone>(
     let value = load();
     let mut cache = cache.write().unwrap_or_else(PoisonError::into_inner);
 
-    // Another thread may have loaded it in the meantime. Unwatched, the
-    // first answer is kept for good, so every caller sees the same one.
+    // Another thread may have loaded it meanwhile; unwatched files keep their first answer for good...
     if max_age.is_none()
         && let Some(entry) = cache.get(path)
     {

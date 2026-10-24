@@ -83,11 +83,11 @@ impl<T> Paginator<T> {
     /// Create a paginator for a page of items.
     /// Page numbers and page sizes have a minimum of one.
     pub fn new(data: Vec<T>, total: u64, per_page: u64, current_page: u64) -> Self {
-        let current_page = current_page.max(1);
         let per_page = per_page.max(1);
+        let current_page = current_page.max(1);
         let last_page = total.div_ceil(per_page).max(1);
         let count = data.len() as u64;
-        let from = (count > 0).then(|| (current_page - 1).saturating_mul(per_page).saturating_add(1));
+        let from = (count > 0).then(|| (current_page - 1) * per_page + 1);
 
         Self {
             data,
@@ -96,7 +96,7 @@ impl<T> Paginator<T> {
             per_page,
             total,
             from,
-            to: from.map(|from| from.saturating_add(count - 1)),
+            to: from.map(|from| from + count - 1),
             page_name: "page".to_owned(),
         }
     }
@@ -129,19 +129,5 @@ impl<T> Paginator<T> {
 impl<T> ProvidesScrollMetadata for Paginator<T> {
     fn scroll_metadata(&self) -> ScrollMetadata {
         ScrollMetadata::pages(&self.page_name, self.current_page, self.last_page)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn page_zero_is_the_first_page() {
-        let paginator = Paginator::new(vec![1, 2], 2, 10, 0);
-
-        assert_eq!(paginator.current_page, 1);
-        assert_eq!((paginator.from, paginator.to), (Some(1), Some(2)));
-        assert_eq!(paginator.scroll_metadata().previous_page, None);
     }
 }

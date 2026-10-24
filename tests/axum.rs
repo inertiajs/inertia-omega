@@ -313,9 +313,7 @@ async fn renders_without_flash_data_leave_the_session_alone() {
     let app = app(config());
     let cookie = send(&app, get_("/login")).await.session_cookie();
 
-    // The session layer only saves a modified session, and sets a cookie
-    // when it does, so a read-only render can't overwrite another
-    // request's changes.
+    // The session layer saves, and sets a cookie, only for a modified session...
     let response = send(
         &app,
         visit("GET", "/")

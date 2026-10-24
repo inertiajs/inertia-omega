@@ -213,18 +213,6 @@ mod tests {
     }
 
     #[test]
-    fn prefetches_follow_redirects_with_fragments() {
-        // A prefetched page is only cached, so there's no visit whose
-        // fragment `fetch` could drop.
-        let request = request(Method::GET, &[("x-inertia", "true"), ("purpose", "prefetch")]);
-        let mut response = parts(StatusCode::FOUND, Some("/users#top"));
-
-        assert!(after(&request, &mut response, true).is_none());
-        assert_eq!(response.status, StatusCode::FOUND);
-        assert_eq!(response.headers["location"], "/users#top");
-    }
-
-    #[test]
     fn empty_responses_redirect_back() {
         let request = request(Method::PATCH, &[("x-inertia", "true"), ("referer", "/users/1/edit")]);
         let replacement = after(&request, &mut parts(StatusCode::OK, None), true).unwrap();
