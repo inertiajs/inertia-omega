@@ -1,12 +1,12 @@
 //! Server-side rendering.
 
+#[cfg(feature = "ssr")]
+use std::collections::HashSet;
 use std::future::Future;
 #[cfg(feature = "ssr")]
 use std::path::PathBuf;
 #[cfg(feature = "ssr")]
-use std::sync::OnceLock;
-#[cfg(feature = "ssr")]
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{LazyLock, Mutex, OnceLock, PoisonError};
 #[cfg(feature = "ssr")]
 use std::time::Duration;
 
@@ -54,6 +54,7 @@ impl<G: Gateway> DynGateway for G {
 /// started with `node bootstrap/ssr/app.js`.
 #[cfg(feature = "ssr")]
 #[derive(Debug, Clone)]
+#[must_use]
 pub struct HttpGateway {
     url: String,
     hot_file: Option<PathBuf>,
@@ -105,11 +106,12 @@ impl HttpGateway {
         self
     }
 
-    /// Set whether the hot file and the bundle are checked on every render.
+    /// Set whether the hot file and the bundle are checked again while running.
     ///
     /// On by default, so starting the dev server or building the bundle takes
-    /// effect without a restart. Turn it off in production, where neither
-    /// changes without a deploy, to check each once.
+    /// effect without a restart: each is checked at most once a second. Turn
+    /// it off in production, where neither changes without a deploy, to check
+    /// each once.
     pub fn watch(mut self, watch: bool) -> Self {
         self.watch = watch;
         self
@@ -197,8 +199,8 @@ impl Gateway for HttpGateway {
         let response = match self.client.post(&url).json(page).send().await {
             Ok(response) => response,
             Err(error) => {
-                // Warn once to avoid flooding logs while the SSR server is unavailable...
-                if !WARNED_UNREACHABLE.swap(true, Ordering::Relaxed) {
+                // Warn once per outage to avoid flooding logs while the SSR server is unavailable...
+                if unreachable().insert(url.clone()) {
                     tracing::warn!(%url, %error, "the Inertia SSR server is unreachable; rendering on the client");
                 } else {
                     tracing::debug!(%url, %error, "the Inertia SSR server is unreachable");
@@ -206,6 +208,9 @@ impl Gateway for HttpGateway {
                 return None;
             }
         };
+
+        // The server is back, so warn again if it goes down again...
+        unreachable().remove(&url);
 
         if !response.status().is_success() {
             let status = response.status();
@@ -228,8 +233,16 @@ impl Gateway for HttpGateway {
     }
 }
 
+/// The SSR servers found unreachable and warned about, until they're back.
+///
+/// Kept for the process rather than per gateway, since apps may build a
+/// gateway per request. By URL, so each server's outage is warned about.
 #[cfg(feature = "ssr")]
-static WARNED_UNREACHABLE: AtomicBool = AtomicBool::new(false);
+fn unreachable() -> std::sync::MutexGuard<'static, HashSet<String>> {
+    static UNREACHABLE: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Mutex::default);
+
+    UNREACHABLE.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// The client shared by gateways with the default timeout. Clients pool
 /// connections, so building one per gateway would waste them.

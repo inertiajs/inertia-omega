@@ -14,11 +14,17 @@ use crate::request::Request;
 /// running it: when an Inertia `GET` visit comes from a client with
 /// outdated assets, a `409 Conflict` that has it reload the page.
 pub fn before(request: &Request, config: &Config) -> Option<HttpResponse> {
+    version_conflict(request, || config.current_version())
+}
+
+/// [`before`], computing the version only for the requests it checks.
+pub(crate) fn version_conflict<V: AsRef<str>>(request: &Request, version: impl FnOnce() -> V) -> Option<HttpResponse> {
     if !request.is_inertia() || request.method() != Method::GET {
         return None;
     }
 
-    let version = config.current_version();
+    let version = version();
+    let version = version.as_ref();
 
     if request.version().unwrap_or_default() == version {
         return None;

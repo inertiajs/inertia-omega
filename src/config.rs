@@ -24,6 +24,7 @@ type ResolveUrl = dyn Fn(&Request) -> String + Send + Sync;
 ///     });
 /// ```
 #[derive(Clone)]
+#[must_use]
 pub struct Config {
     version: Version,
     root_view: Arc<dyn RootView>,
@@ -155,7 +156,14 @@ impl Default for Config {
 impl fmt::Debug for Config {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Config")
-            .field("version", &self.current_version())
+            // Formatting must not run the app's version callback, which may hash a file...
+            .field(
+                "version",
+                &match &self.version {
+                    Version::Fixed(version) => version.as_str(),
+                    Version::Computed(_) => "<computed>",
+                },
+            )
             .field("root_id", &self.root_id)
             .field("ssr", &self.gateway.is_some())
             .field("encrypt_history", &self.encrypt_history)
@@ -163,5 +171,18 @@ impl fmt::Debug for Config {
             .field("preserve_big_integers", &self.preserve_big_integers)
             .field("all_errors", &self.all_errors)
             .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_output_leaves_computed_versions_alone() {
+        let config = Config::new().version_with(|| panic!("the version was computed"));
+
+        assert!(format!("{config:?}").contains(r#"version: "<computed>""#));
+        assert!(format!("{:?}", Config::new().version("1")).contains(r#"version: "1""#));
     }
 }

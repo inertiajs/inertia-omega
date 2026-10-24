@@ -19,6 +19,7 @@ use serde_json::{Map, Value};
 /// With the `validator` or `garde` features, their error types convert into
 /// `ValidationErrors` with `From`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[must_use]
 pub struct ValidationErrors(IndexMap<String, Vec<String>>);
 
 impl ValidationErrors {
