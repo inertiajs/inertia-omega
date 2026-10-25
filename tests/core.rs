@@ -172,6 +172,59 @@ fn serializing_a_shared_prop_can_share_another_prop() {
     assert_eq!(page.props["signed_in"], json!(true));
 }
 
+/// Flashes when dropped, as a value an application's prop callback captures might.
+struct FlashWhenDropped(Inertia);
+
+impl Drop for FlashWhenDropped {
+    fn drop(&mut self) {
+        self.0.flash("dropped", true);
+    }
+}
+
+fn flashing_prop(inertia: &Inertia) -> inertia::Prop {
+    let flash = FlashWhenDropped(inertia.clone());
+
+    inertia::lazy(move || async move {
+        drop(flash);
+        "Taylor"
+    })
+}
+
+#[test]
+fn replacing_a_shared_prop_drops_the_old_one_outside_the_lock() {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let inertia = visit(&[]);
+        inertia.share("user", flashing_prop(&inertia));
+        inertia.share("user", "Jess");
+        sender.send(inertia).unwrap();
+    });
+    let inertia = receiver
+        .recv_timeout(Duration::from_secs(5))
+        .expect("sharing must drop the replaced prop after releasing the pending-data lock");
+
+    let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+    let page = runtime.block_on(resolve(inertia.render("Users", props! {})));
+    assert_eq!(page.props["user"], json!("Jess"));
+    assert_eq!(page.flash["dropped"], json!(true));
+}
+
+#[test]
+fn committing_drops_unrendered_shared_props_outside_the_lock() {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let inertia = Inertia::with_session(config(), request(Method::POST, &[]), ArraySession::new());
+        inertia.share("user", flashing_prop(&inertia));
+        let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        runtime.block_on(inertia.commit());
+        sender.send(()).unwrap();
+    });
+
+    receiver
+        .recv_timeout(Duration::from_secs(5))
+        .expect("committing must drop shared props no page rendered after releasing the pending-data lock");
+}
+
 #[tokio::test]
 async fn partial_reloads_exclude_the_excepted_props() {
     let page =
