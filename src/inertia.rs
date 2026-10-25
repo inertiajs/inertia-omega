@@ -101,7 +101,9 @@ impl Inertia {
         // Convert before locking: application serialization may share more data...
         let value = value.into_prop();
 
-        self.pending().shared.insert(key, value);
+        let replaced = self.pending().shared.0.insert(key, value);
+        // Drop a replaced prop after the lock, since a callback's captures can run application code...
+        drop(replaced);
         self
     }
 
@@ -174,12 +176,15 @@ impl Inertia {
     /// have finished.
     pub async fn commit(&self) {
         let Pending {
+            shared,
             flash,
             errors,
             clear_history,
             preserve_fragment,
             ..
         } = std::mem::take(&mut *self.pending());
+        // Drop props no page rendered after the lock, since their callbacks' captures can run application code...
+        drop(shared);
 
         let has_data = !flash.is_empty() || !errors.is_empty() || clear_history || preserve_fragment;
 
