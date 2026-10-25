@@ -87,7 +87,7 @@ impl AssertablePage {
     pub fn has(&self, path: &str) -> &Self {
         assert!(
             self.prop(path).is_some(),
-            "expected the Inertia page to have prop [{path}]\n\n{}",
+            "expected the Inertia page to have prop `{path}`\n\n{}",
             self.props()
         );
         self
@@ -99,11 +99,11 @@ impl AssertablePage {
         let actual = match self.prop(path) {
             Some(Value::Array(items)) => items.len(),
             Some(Value::Object(object)) => object.len(),
-            Some(other) => panic!("expected Inertia prop [{path}] to be an array or object, got {other}"),
-            None => panic!("expected the Inertia page to have prop [{path}]\n\n{}", self.props()),
+            Some(other) => panic!("expected Inertia prop `{path}` to be an array or object, got {other}"),
+            None => panic!("expected the Inertia page to have prop `{path}`\n\n{}", self.props()),
         };
 
-        assert_eq!(actual, count, "unexpected number of items in Inertia prop [{path}]");
+        assert_eq!(actual, count, "unexpected number of items in Inertia prop `{path}`");
         self
     }
 
@@ -112,7 +112,7 @@ impl AssertablePage {
     pub fn missing(&self, path: &str) -> &Self {
         assert!(
             self.prop(path).is_none(),
-            "expected the Inertia page not to have prop [{path}]\n\n{}",
+            "expected the Inertia page not to have prop `{path}`\n\n{}",
             self.props()
         );
         self
@@ -124,8 +124,8 @@ impl AssertablePage {
         let expected = serde_json::to_value(expected).expect("the expected value should serialize");
 
         match self.prop(path) {
-            Some(actual) => assert_eq!(actual, &expected, "unexpected value of Inertia prop [{path}]"),
-            None => panic!("expected the Inertia page to have prop [{path}]\n\n{}", self.props()),
+            Some(actual) => assert_eq!(actual, &expected, "unexpected value of Inertia prop `{path}`"),
+            None => panic!("expected the Inertia page to have prop `{path}`\n\n{}", self.props()),
         }
         self
     }
@@ -141,7 +141,7 @@ impl AssertablePage {
             .map(Vec::as_slice)
             .unwrap_or_default();
 
-        assert_eq!(deferred, props, "unexpected deferred props in group [{group}]");
+        assert_eq!(deferred, props, "unexpected deferred props in group `{group}`");
         self
     }
 
@@ -153,7 +153,7 @@ impl AssertablePage {
         assert_eq!(
             self.page.flash.get(key),
             Some(&expected),
-            "unexpected Inertia flash data [{key}]"
+            "unexpected Inertia flash data `{key}`"
         );
         self
     }
