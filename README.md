@@ -169,7 +169,7 @@ The functions at the crate root create props with special behavior, which builde
 | `inertia::deep_merge(value)` | Deep merged with its client-side value. |
 | `inertia::once(..)` | Resolved once and remembered by the client. `.once_as("key")`, `.until(duration)`, `.fresh()`. |
 | `inertia::scroll(paginator)` | An infinite scroll page, for `<InfiniteScroll>`. `inertia::scroll_with(async \|\| { .. })` loads it lazily. |
-| `inertia::try_lazy(..)` | A fallible callback. Errors fail the response, unless the prop is `.rescue()`d. |
+| `inertia::try_lazy(..)` | Like `lazy`, for a callback whose `Result` has an error type that is itself `Serialize`, such as `String`. |
 
 The behaviors compose:
 
@@ -177,11 +177,11 @@ The behaviors compose:
 props! {
     posts => inertia::defer(async || load_posts().await).group("feed").merge().match_on("id"),
     plans => inertia::once(async || load_plans().await).until(Duration::from_secs(3600)),
-    stats => inertia::try_lazy(async || stats_api().await).deferred().rescue(),
+    stats => inertia::defer(async || stats_api().await).rescue(),
 }
 ```
 
-Callbacks are closures returning futures (`FnOnce`), so they can move in owned data such as a database pool. **Sibling callbacks run concurrently**, so independent lookups can overlap rather than run one after another.
+A callback may return a `Result`. Its error fails the response, unless the prop is `.rescue()`d, which tells the client that the prop failed. A callback runs after the handler returns, so it owns what it uses: move values into it with `async move`, such as a database pool or an ID. **Sibling callbacks run concurrently**, so independent lookups can overlap rather than run one after another.
 
 For infinite scroll, `Paginator` paginates a collection and describes its pages; implement `ProvidesScrollMetadata` for your own paginated types:
 

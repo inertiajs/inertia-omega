@@ -209,19 +209,67 @@ macro_rules! props {
     };
 }
 
+/// What a lazy prop's callback returns: a value to serialize, or a
+/// `Result` of one, whose error fails the response unless the prop is
+/// [rescued](Prop::rescue).
+///
+/// The marker `M` tells the two apart. A callback that returns a `Result`
+/// whose `Ok` and `Err` types are both `Serialize`, such as
+/// `Result<T, String>`, matches both; use [`try_lazy`] for it.
+#[diagnostic::on_unimplemented(
+    message = "a lazy prop's callback returns `{Self}`, which isn't a prop value",
+    label = "this callback",
+    note = "return a `Serialize` value, or a `Result` of one whose error converts into `Box<dyn Error + Send + Sync>`"
+)]
+pub trait Loaded<M> {
+    #[doc(hidden)]
+    fn into_json(self) -> Result<Value, PropError>;
+}
+
+#[doc(hidden)]
+pub enum Plain {}
+
+#[doc(hidden)]
+pub enum Fallible {}
+
+impl<T: Serialize> Loaded<Plain> for T {
+    fn into_json(self) -> Result<Value, PropError> {
+        Ok(serde_json::to_value(self)?)
+    }
+}
+
+impl<T: Serialize, E: Into<BoxError>> Loaded<Fallible> for Result<T, E> {
+    fn into_json(self) -> Result<Value, PropError> {
+        Ok(serde_json::to_value(self.map_err(PropError::new)?)?)
+    }
+}
+
 /// A prop computed by a callback, which only runs when the prop is part of
-/// the response.
+/// the response, after the handler has returned. The callback owns what it
+/// uses, so move values into it.
+///
+/// The callback may return a `Result`. Its error fails the response, unless
+/// the prop is [rescued](Prop::rescue).
 ///
 /// ```
+/// # async fn load_stats() -> Result<u32, std::io::Error> { Ok(1) }
 /// let user = inertia::lazy(async || "Taylor");
+/// let stats = inertia::lazy(async || load_stats().await);
 /// ```
-pub fn lazy<F, Fut, T>(callback: F) -> Prop
+pub fn lazy<F, Fut, T, M>(callback: F) -> Prop
 where
     F: FnOnce() -> Fut + Send + 'static,
     Fut: Future<Output = T> + Send + 'static,
-    T: Serialize,
+    T: Loaded<M>,
 {
-    try_lazy(move || async move { Ok::<_, std::convert::Infallible>(callback().await) })
+    Prop::from_source(Source::Callback(Box::new(move || {
+        Box::pin(async move {
+            Ok(Computed {
+                value: callback().await.into_json()?,
+                scroll: None,
+            })
+        })
+    })))
 }
 
 /// A prop computed by a fallible callback. An error fails the response,
@@ -251,32 +299,32 @@ where
 }
 
 /// A prop that is only sent when a partial reload asks for it.
-pub fn optional<F, Fut, T>(callback: F) -> Prop
+pub fn optional<F, Fut, T, M>(callback: F) -> Prop
 where
     F: FnOnce() -> Fut + Send + 'static,
     Fut: Future<Output = T> + Send + 'static,
-    T: Serialize,
+    T: Loaded<M>,
 {
     lazy(callback).optional()
 }
 
 /// A prop the client fetches right after the first render, so a slow prop
 /// doesn't hold up the page.
-pub fn defer<F, Fut, T>(callback: F) -> Prop
+pub fn defer<F, Fut, T, M>(callback: F) -> Prop
 where
     F: FnOnce() -> Fut + Send + 'static,
     Fut: Future<Output = T> + Send + 'static,
-    T: Serialize,
+    T: Loaded<M>,
 {
     lazy(callback).deferred()
 }
 
 /// A prop that is resolved once and remembered by the client on later visits.
-pub fn once<F, Fut, T>(callback: F) -> Prop
+pub fn once<F, Fut, T, M>(callback: F) -> Prop
 where
     F: FnOnce() -> Fut + Send + 'static,
     Fut: Future<Output = T> + Send + 'static,
-    T: Serialize,
+    T: Loaded<M>,
 {
     lazy(callback).once()
 }

@@ -270,6 +270,31 @@ async fn deferred_props_are_announced_then_loaded_by_group() {
 }
 
 #[tokio::test]
+async fn lazy_props_take_callbacks_that_return_results() {
+    let stats = || async { Ok::<_, std::io::Error>(42) };
+    let broken = || async { Err::<u8, _>(std::io::Error::other("The stats are down")) };
+    let props = || {
+        props! {
+            "stats" => inertia::defer(stats),
+            "broken" => inertia::defer(broken).rescue(),
+        }
+    };
+
+    let page = resolve(reload(&[("x-inertia-partial-data", "stats,broken")]).render("Users", props())).await;
+    assert_eq!(
+        serde_json::to_value(&page.props).unwrap(),
+        json!({ "errors": {}, "stats": 42 })
+    );
+    assert_eq!(page.metadata.rescued_props, ["broken"]);
+
+    let response = visit(&[]).render("Users", props! { "broken" => inertia::lazy(broken) });
+    assert_eq!(
+        response.into_page().await.unwrap_err().to_string(),
+        "The stats are down"
+    );
+}
+
+#[tokio::test]
 async fn unrescued_failures_fail_the_render() {
     let response = visit(&[]).render(
         "Users",
