@@ -14,7 +14,7 @@ use super::{PropError, Props, ScrollMetadata};
 /// create props with special behavior, which the builder methods refine:
 ///
 /// ```
-/// let users = inertia::defer(|| async { vec!["Taylor", "Jess"] })
+/// let users = inertia::defer(async || vec!["Taylor", "Jess"])
 ///     .group("sidebar")
 ///     .merge()
 ///     .match_on("id");

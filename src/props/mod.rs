@@ -172,7 +172,7 @@ impl<T: Serialize> IntoProps for T {
 ///     user,
 ///     can_edit => true,
 ///     "auth.user.id" => 1,
-///     stats => inertia::defer(|| async { 42 }),
+///     stats => inertia::defer(async || 42),
 /// };
 ///
 /// assert_eq!(user, "Taylor");
@@ -190,7 +190,7 @@ impl<T: Serialize> IntoProps for T {
 /// # let (is_admin, team) = (true, Some("Laravel"));
 /// let props = inertia::props! {
 ///     if is_admin {
-///         stats => inertia::defer(|| async { 42 }),
+///         stats => inertia::defer(async || 42),
 ///     } else {
 ///         upgrade => "Upgrade to see stats",
 ///     }
@@ -213,7 +213,7 @@ macro_rules! props {
 /// the response.
 ///
 /// ```
-/// let user = inertia::lazy(|| async { "Taylor" });
+/// let user = inertia::lazy(async || "Taylor");
 /// ```
 pub fn lazy<F, Fut, T>(callback: F) -> Prop
 where

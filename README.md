@@ -8,7 +8,7 @@ async fn show(inertia: Inertia, Path(id): Path<u64>, State(db): State<Db>) -> in
 
     inertia.render("Users/Show", props! {
         user,
-        activity => inertia::defer(move || async move { db.activity_for(id).await }),
+        activity => inertia::defer(async move || db.activity_for(id).await),
     })
 }
 ```
@@ -128,7 +128,7 @@ props! {
     "auth.user.permissions" => ["edit"],  // nested with dot notation
     settings => props! {                  // nested props, with behavior of their own
         theme => "dark",
-        billing => inertia::optional(|| async { load_billing().await }),
+        billing => inertia::optional(async || load_billing().await),
     },
 }
 ```
@@ -143,7 +143,7 @@ An `if` block adds its props only when its condition holds, and `else if`, `else
 props! {
     user,
     if user.is_admin {
-        stats => inertia::defer(|| async { load_stats().await }),
+        stats => inertia::defer(async || load_stats().await),
     } else {
         upgrade_url => "/billing",
     }
@@ -161,23 +161,23 @@ The functions at the crate root create props with special behavior, which builde
 
 | Prop | Behavior |
 | --- | --- |
-| `inertia::lazy(\|\| async { .. })` | Computed only when the prop is part of the response. |
+| `inertia::lazy(async \|\| { .. })` | Computed only when the prop is part of the response. |
 | `inertia::optional(..)` | Only sent when a partial reload asks for it. |
 | `inertia::defer(..)` | Left out of the first render; the client fetches it right after. `.group("name")` loads deferred props in parallel groups. |
 | `inertia::always(value)` | Sent with every response, even partial reloads that didn't ask for it. |
 | `inertia::merge(value)` | Appended to its client-side value. `.prepend()`, `.append_at("data")`, `.prepend_at("data")`, `.match_on("id")`. |
 | `inertia::deep_merge(value)` | Deep merged with its client-side value. |
 | `inertia::once(..)` | Resolved once and remembered by the client. `.once_as("key")`, `.until(duration)`, `.fresh()`. |
-| `inertia::scroll(paginator)` | An infinite scroll page, for `<InfiniteScroll>`. `inertia::scroll_with(\|\| async { .. })` loads it lazily. |
+| `inertia::scroll(paginator)` | An infinite scroll page, for `<InfiniteScroll>`. `inertia::scroll_with(async \|\| { .. })` loads it lazily. |
 | `inertia::try_lazy(..)` | A fallible callback. Errors fail the response, unless the prop is `.rescue()`d. |
 
 The behaviors compose:
 
 ```rust
 props! {
-    posts => inertia::defer(|| async { load_posts().await }).group("feed").merge().match_on("id"),
-    plans => inertia::once(|| async { load_plans().await }).until(Duration::from_secs(3600)),
-    stats => inertia::try_lazy(|| async { stats_api().await }).deferred().rescue(),
+    posts => inertia::defer(async || load_posts().await).group("feed").merge().match_on("id"),
+    plans => inertia::once(async || load_plans().await).until(Duration::from_secs(3600)),
+    stats => inertia::try_lazy(async || stats_api().await).deferred().rescue(),
 }
 ```
 
@@ -186,7 +186,7 @@ Callbacks are closures returning futures (`FnOnce`), so they can move in owned d
 For infinite scroll, `Paginator` paginates a collection and describes its pages; implement `ProvidesScrollMetadata` for your own paginated types:
 
 ```rust
-users => inertia::scroll_with(move || async move {
+users => inertia::scroll_with(async move || {
     Paginator::from_items(db.users().await, 15, page)
 }),
 ```
@@ -198,7 +198,7 @@ Share data with every page from the config. The callback runs on each render, so
 ```rust
 Config::new().share(|_request| props! {
     appName => "Acme",
-    announcement => inertia::lazy(|| async { latest_announcement().await }),
+    announcement => inertia::lazy(async || latest_announcement().await),
 })
 ```
 
@@ -408,11 +408,11 @@ Implement the `Session` trait (`get`, `put`, `pull`) for the framework's session
 | Laravel | Rust |
 | --- | --- |
 | `Inertia::render('Users/Index', [...])` | `inertia.render("Users/Index", props! { .. })` |
-| `Inertia::optional(fn () => ..)` | `inertia::optional(\|\| async { .. })` |
-| `Inertia::defer(fn () => ..)->group('x')` | `inertia::defer(\|\| async { .. }).group("x")` |
+| `Inertia::optional(fn () => ..)` | `inertia::optional(async \|\| { .. })` |
+| `Inertia::defer(fn () => ..)->group('x')` | `inertia::defer(async \|\| { .. }).group("x")` |
 | `Inertia::merge(..)->matchOn('id')` | `inertia::merge(..).match_on("id")` |
 | `Inertia::deepMerge(..)` / `Inertia::always(..)` | `inertia::deep_merge(..)` / `inertia::always(..)` |
-| `Inertia::once(fn () => ..)->until(..)` | `inertia::once(\|\| async { .. }).until(..)` |
+| `Inertia::once(fn () => ..)->until(..)` | `inertia::once(async \|\| { .. }).until(..)` |
 | `Inertia::scroll(User::paginate())` | `inertia::scroll(Paginator::from_items(..))` |
 | `HandleInertiaRequests::share()` | `Config::share` or `inertia.share(..)` in a middleware |
 | `HandleInertiaRequests::version()` | `Config::version` / `Config::version_with` |

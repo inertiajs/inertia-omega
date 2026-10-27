@@ -18,7 +18,7 @@
 //! async fn dashboard(inertia: Inertia) -> inertia::Response {
 //!     inertia.render("Dashboard", props! {
 //!         user => "Taylor",
-//!         stats => inertia::defer(|| async { vec![1, 2, 3] }),
+//!         stats => inertia::defer(async || vec![1, 2, 3]),
 //!     })
 //! }
 //!
