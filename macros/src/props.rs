@@ -1,5 +1,5 @@
 use proc_macro2::{Span, TokenStream, TokenTree};
-use quote::{ToTokens, quote};
+use quote::{ToTokens, quote, quote_spanned};
 use syn::ext::IdentExt;
 use syn::parse::{ParseStream, Parser};
 use syn::{Expr, Ident, LitStr, Token, braced};
@@ -16,7 +16,7 @@ pub fn expand(input: TokenStream) -> syn::Result<TokenStream> {
     // A mixed-site name can't capture or shadow a `props` of the caller's...
     let props = Ident::new("props", Span::mixed_site());
     let mutable = (!entries.is_empty()).then(|| quote!(mut));
-    let inserts = entries.iter().map(|entry| entry.insert(&props));
+    let inserts = entries.iter().map(|entry| entry.insert(&krate, &props));
 
     Ok(quote! {{
         let #mutable #props = #krate::Props::new();
@@ -26,7 +26,7 @@ pub fn expand(input: TokenStream) -> syn::Result<TokenStream> {
 }
 
 enum Entry {
-    /// A variable by name, or `name => value`.
+    /// A variable by name, which is borrowed, or `name => value`.
     Named(Ident, Option<Expr>),
     /// `"name" => value`, for keys that aren't identifiers.
     Quoted(LitStr, Expr),
@@ -115,33 +115,35 @@ fn block(input: ParseStream) -> syn::Result<Vec<Entry>> {
 }
 
 impl Entry {
-    fn insert(&self, props: &Ident) -> TokenStream {
+    fn insert(&self, krate: &TokenStream, props: &Ident) -> TokenStream {
         match self {
             Self::Named(name, value) => {
                 let key = LitStr::new(&name.unraw().to_string(), name.span());
-                let value = value
-                    .as_ref()
-                    .map_or_else(|| name.to_token_stream(), ToTokens::to_token_stream);
+                // Shorthand borrows, as `data!` does, so the caller keeps the variable...
+                let value = value.as_ref().map_or_else(
+                    || quote_spanned!(name.span()=> #krate::__private::shorthand(&#name)),
+                    ToTokens::to_token_stream,
+                );
 
                 quote!(#props.insert(#key, #value);)
             }
             Self::Quoted(key, value) => quote!(#props.insert(#key, #value);),
-            Self::If(conditional) => conditional.insert(props),
+            Self::If(conditional) => conditional.insert(krate, props),
         }
     }
 }
 
 impl If {
-    fn insert(&self, props: &Ident) -> TokenStream {
+    fn insert(&self, krate: &TokenStream, props: &Ident) -> TokenStream {
         let condition = &self.condition;
-        let then = self.then.iter().map(|entry| entry.insert(props));
+        let then = self.then.iter().map(|entry| entry.insert(krate, props));
         let otherwise = self.otherwise.as_ref().map(|otherwise| match otherwise {
             Else::If(conditional) => {
-                let conditional = conditional.insert(props);
+                let conditional = conditional.insert(krate, props);
                 quote!(else #conditional)
             }
             Else::Entries(entries) => {
-                let entries = entries.iter().map(|entry| entry.insert(props));
+                let entries = entries.iter().map(|entry| entry.insert(krate, props));
                 quote!(else { #(#entries)* })
             }
         });

@@ -78,4 +78,18 @@ pub type HttpResponse = http::Response<String>;
 #[doc(hidden)]
 pub mod __private {
     pub use inertia_omega_macros::props;
+
+    /// A value that a shorthand `props!` entry can borrow, which is any `Serialize` value.
+    #[diagnostic::on_unimplemented(
+        message = "a shorthand `props!` entry borrows its variable, and `{Self}` isn't `Serialize`",
+        label = "borrowed here",
+        note = "to move a `Prop` or `Props`, such as one from `inertia::lazy` or `inertia::defer`, write `name => name`"
+    )]
+    pub trait Shorthand {}
+
+    impl<T: serde::Serialize + ?Sized> Shorthand for T {}
+
+    pub fn shorthand<T: Shorthand + ?Sized>(value: &T) -> &T {
+        value
+    }
 }

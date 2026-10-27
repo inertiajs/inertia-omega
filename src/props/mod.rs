@@ -166,7 +166,7 @@ impl<T: Serialize> IntoProps for T {
 /// such as dotted paths. A key is the name as written.
 ///
 /// ```
-/// let user = "Taylor";
+/// let user = String::from("Taylor");
 ///
 /// let props = inertia::props! {
 ///     user,
@@ -174,7 +174,14 @@ impl<T: Serialize> IntoProps for T {
 ///     "auth.user.id" => 1,
 ///     stats => inertia::defer(|| async { 42 }),
 /// };
+///
+/// assert_eq!(user, "Taylor");
 /// ```
+///
+/// A variable named on its own is borrowed and serialized straight away, so
+/// the caller keeps it. A `name => value` pair takes the value as written:
+/// pass `&value` to keep it, and move a [`Prop`], such as a deferred one,
+/// with `stats => stats`.
 ///
 /// `if`, `else if`, `else` and `if let` blocks add their props only when
 /// their condition holds:

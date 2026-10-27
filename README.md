@@ -135,6 +135,8 @@ props! {
 
 A key is the name as you write it, so `can_edit` stays `can_edit`. When a page expects camelCase, write `canEdit => can_edit`.
 
+`props!` borrows a variable named on its own and serializes it straight away, so you can keep using the variable afterward. A `name => value` pair takes the value as written. Pass `&value` to keep the value, and move a lazy prop with `stats => stats`.
+
 An `if` block adds its props only when its condition holds, and `else if`, `else` and `if let` work as they do in Rust:
 
 ```rust
