@@ -61,24 +61,32 @@ impl AssertablePage {
         Some(value)
     }
 
-    /// Assert the page component.
+    /// Assert the page component. A failure shows the page's props, such as
+    /// the `status` and `message` of an error page rendered instead.
     #[track_caller]
     pub fn component(&self, expected: &str) -> &Self {
-        assert_eq!(self.page.component, expected, "unexpected Inertia page component");
-        self
+        self.assert_field("page component", &self.page.component, expected)
     }
 
     /// Assert the page URL.
     #[track_caller]
     pub fn url(&self, expected: &str) -> &Self {
-        assert_eq!(self.page.url, expected, "unexpected Inertia page URL");
-        self
+        self.assert_field("page URL", &self.page.url, expected)
     }
 
     /// Assert the asset version.
     #[track_caller]
     pub fn version(&self, expected: &str) -> &Self {
-        assert_eq!(self.page.version, expected, "unexpected Inertia asset version");
+        self.assert_field("asset version", &self.page.version, expected)
+    }
+
+    #[track_caller]
+    fn assert_field(&self, field: &str, actual: &str, expected: &str) -> &Self {
+        assert!(
+            actual == expected,
+            "expected the Inertia {field} `{expected}`, but it's `{actual}`\n\n{}",
+            self.props()
+        );
         self
     }
 
@@ -193,9 +201,37 @@ mod tests {
             .missing("user.email");
     }
 
+    fn failure(assertion: impl FnOnce(&AssertablePage)) -> String {
+        let page = AssertablePage::from_body(
+            r#"{"component":"Error","props":{"status":404,"message":"Not Found"},"url":"/users/1","version":"1"}"#,
+        );
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| assertion(&page)))
+            .expect_err("the assertion should fail");
+
+        panic.downcast_ref::<String>().cloned().unwrap_or_default()
+    }
+
     #[test]
-    #[should_panic(expected = "unexpected Inertia page component")]
-    fn fails_on_the_wrong_component() {
-        AssertablePage::from_body(HTML).component("Dashboard");
+    fn page_failures_show_the_props_that_explain_them() {
+        let props = "{\n  \"status\": 404,\n  \"message\": \"Not Found\"\n}";
+
+        assert_eq!(
+            failure(|page| {
+                page.component("Users/Show");
+            }),
+            format!("expected the Inertia page component `Users/Show`, but it's `Error`\n\n{props}")
+        );
+        assert_eq!(
+            failure(|page| {
+                page.url("/users/2");
+            }),
+            format!("expected the Inertia page URL `/users/2`, but it's `/users/1`\n\n{props}")
+        );
+        assert_eq!(
+            failure(|page| {
+                page.version("2");
+            }),
+            format!("expected the Inertia asset version `2`, but it's `1`\n\n{props}")
+        );
     }
 }
