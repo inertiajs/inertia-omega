@@ -1,7 +1,7 @@
 //! The per-request Inertia handle.
 
 use std::fmt;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -40,6 +40,7 @@ struct Context {
     config: Arc<Config>,
     request: Request,
     session: Option<SharedSession>,
+    version: OnceLock<String>,
     pending: Mutex<Pending>,
 }
 
@@ -72,6 +73,7 @@ impl Inertia {
                 config,
                 request,
                 session,
+                version: OnceLock::new(),
                 pending: Mutex::default(),
             }),
         }
@@ -85,6 +87,14 @@ impl Inertia {
     /// The request.
     pub fn request(&self) -> &Request {
         &self.context.request
+    }
+
+    /// The current asset version.
+    ///
+    /// Computed once per request, however often it's asked for, since a
+    /// [computed version](Config::version_with) may hash a file.
+    pub fn version(&self) -> &str {
+        self.context.version.get_or_init(|| self.config().current_version())
     }
 
     /// Render a page component.
@@ -225,6 +235,22 @@ impl Inertia {
     /// Take everything queued for the next page.
     pub(crate) fn take_pending(&self) -> Pending {
         std::mem::take(&mut *self.pending())
+    }
+
+    /// Put back the flash data, errors and history flags a failed page render
+    /// took, ahead of anything queued since. Props shared with
+    /// [`share`](Self::share) aren't among them: the render moved them into
+    /// the props it resolved, so they're gone.
+    pub(crate) fn restore_pending(&self, taken: Pending) {
+        let mut pending = self.pending();
+        let queued = std::mem::replace(&mut *pending, taken);
+
+        pending.shared.extend(queued.shared);
+        pending.flash.extend(queued.flash);
+        pending.errors.merge(queued.errors);
+        pending.clear_history |= queued.clear_history;
+        pending.preserve_fragment |= queued.preserve_fragment;
+        pending.encrypt_history = queued.encrypt_history.or(pending.encrypt_history);
     }
 
     /// Take flash data queued while resolving props.

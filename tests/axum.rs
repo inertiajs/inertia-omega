@@ -2,12 +2,15 @@
 
 #![cfg(feature = "axum")]
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use axum::body::Body;
 use axum::extract::Request;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 #[cfg(feature = "tower-sessions")]
 use http::header;
 use http::{HeaderMap, StatusCode};
@@ -51,6 +54,12 @@ fn app(config: Config) -> Router {
             get(|inertia: Inertia| async move { inertia.location("https://inertiajs.com") }),
         )
         .route("/json", get(|| async { Json(serde_json::json!({ "plain": true })) }))
+        .route(
+            "/login",
+            get(|Extension(session): Extension<tower_sessions::Session>| async move {
+                session.insert("user", 1).await.unwrap();
+            }),
+        )
         .route_layer(middleware::from_fn(share_user))
         .layer(InertiaLayer::new(config))
         .layer(SessionManagerLayer::new(MemoryStore::default()).with_secure(false))
@@ -201,6 +210,23 @@ async fn outdated_clients_reload_the_page() {
 }
 
 #[tokio::test]
+async fn computed_versions_are_computed_once_per_request() {
+    let computed = Arc::new(AtomicUsize::new(0));
+    let config = Config::new().version_with({
+        let computed = Arc::clone(&computed);
+        move || {
+            computed.fetch_add(1, Ordering::Relaxed);
+            "1".to_owned()
+        }
+    });
+
+    let response = send(&app(config), visit("GET", "/").body(Body::empty()).unwrap()).await;
+
+    response.page().version("1");
+    assert_eq!(computed.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test]
 async fn redirects_follow_the_protocol() {
     let app = app(config());
 
@@ -283,6 +309,26 @@ async fn flash_data_and_errors_survive_a_redirect() {
 
 #[cfg(feature = "tower-sessions")]
 #[tokio::test]
+async fn renders_without_flash_data_leave_the_session_alone() {
+    let app = app(config());
+    let cookie = send(&app, get_("/login")).await.session_cookie();
+
+    // The session layer saves, and sets a cookie, only for a modified session...
+    let response = send(
+        &app,
+        visit("GET", "/")
+            .header(header::COOKIE, &cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+
+    assert_eq!(response.status, StatusCode::OK);
+    assert_eq!(response.header("set-cookie"), None);
+}
+
+#[cfg(feature = "tower-sessions")]
+#[tokio::test]
 async fn errors_are_scoped_to_the_requested_error_bag() {
     let app = app(config().all_errors(true));
 
@@ -311,6 +357,48 @@ async fn the_extractor_requires_the_layer() {
     let app = Router::new().route("/", get(|inertia: Inertia| async move { inertia.render("Home", ()) }));
 
     assert_eq!(send(&app, get_("/")).await.status, StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn renders_returned_without_the_layer_are_logged() {
+    let errors = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(CountErrors(Arc::clone(&errors)));
+
+    send(&app(config()), get_("/")).await;
+    assert_eq!(errors.load(Ordering::Relaxed), 0, "the layer rendered it");
+
+    let request = inertia::Request::new(http::Method::GET, &"/".parse().unwrap(), HeaderMap::new());
+    drop(Inertia::new(config(), request).render("Home", ()).into_response());
+    assert_eq!(errors.load(Ordering::Relaxed), 1);
+}
+
+/// Counts the `error` events Inertia logs.
+struct CountErrors(Arc<AtomicUsize>);
+
+impl tracing::Subscriber for CountErrors {
+    fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+        true
+    }
+
+    fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        tracing::span::Id::from_u64(1)
+    }
+
+    fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+
+    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+
+    fn event(&self, event: &tracing::Event<'_>) {
+        let metadata = event.metadata();
+
+        if *metadata.level() == tracing::Level::ERROR && metadata.target().starts_with("inertia") {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn enter(&self, _: &tracing::span::Id) {}
+
+    fn exit(&self, _: &tracing::span::Id) {}
 }
 
 fn failing_page(inertia: Inertia) -> inertia::Response {

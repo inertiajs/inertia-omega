@@ -181,7 +181,7 @@ props! {
 }
 ```
 
-A callback may return a `Result`. Its error fails the response, unless the prop is `.rescue()`d, which tells the client that the prop failed. A callback runs after the handler returns, so it owns what it uses: move values into it with `async move`, such as a database pool or an ID. **Sibling callbacks run concurrently**, so independent lookups can overlap rather than run one after another.
+A callback may return a `Result`. Its error fails the response, unless the prop is `.rescue()`d, which tells the client that the prop failed. `Response::into_page` returns that error as a `PropError`, whose `get_ref()` and `into_inner()` give back the callback's own error. A callback runs after the handler returns, so it owns what it uses: move values into it with `async move`, such as a database pool or an ID. **Callbacks run concurrently**, nested ones included, so independent lookups can overlap rather than run one after another.
 
 For infinite scroll, `Paginator` paginates a collection and describes its pages; implement `ProvidesScrollMetadata` for your own paginated types:
 
@@ -247,7 +247,7 @@ async fn store(inertia: Inertia, Json(form): Json<NewUser>) -> HttpResponse {
 - **Validation crates.** With the `validator` or `garde` features, their errors convert into `ValidationErrors` with `.into()`.
 - **Flash data** is delivered in the page's `flash` field, not its props, so it isn't kept in the browser history.
 
-Like Laravel's session, `flash`, `with_errors`, `clear_history` and `preserve_fragment` are queued during the request, written to the session when it ends, and delivered to the next page render. That can be a render in the same request.
+Like Laravel's session, `flash`, `with_errors`, `clear_history` and `preserve_fragment` are queued during the request, written to the session when it ends, and delivered to the next page render. That can be a render in the same request. A render that fails leaves them for the one after it.
 
 Flash data queued by prop callbacks also reaches the page being rendered. Values set with `inertia::Response::flash` take precedence over the request's flash data.
 
@@ -287,7 +287,7 @@ The [`laravel-omega-vite`](../laravel-omega-vite) crate's `Vite` renders asset t
 - **In development** the Vite dev server writes its URL to a hot file (`public/hot`), and tags point at the dev server, with `Vite::react_refresh()` providing React Fast Refresh's preamble.
 - **In production** tags come from the build manifest, and its hash makes a good asset version.
 
-The manifest is parsed once and cached. Each render checks for the hot file and the manifest's modified time, so starting the dev server or a new build is picked up without a restart. In production, where neither changes without a deploy, `Vite::new().watch(false)` checks each once instead, and so does `HttpGateway::watch(false)` for its hot file and bundle.
+The manifest is parsed once and cached. Each render checks for the hot file and the manifest's modified time, so starting the dev server or a new build is picked up without a restart. In production, where neither changes without a deploy, `Vite::new().watch(false)` checks each once instead, and so does `HttpGateway::watch(false)` for its hot file and bundle, which it otherwise checks at most once a second.
 
 ```rust
 let vite = Vite::new();

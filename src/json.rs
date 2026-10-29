@@ -25,6 +25,24 @@ pub fn html_safe_json(value: &impl Serialize) -> String {
     escaped
 }
 
+/// Escape text for an HTML attribute value, such as the root element's id.
+pub(crate) fn escape_attribute(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+
+    for c in text.chars() {
+        match c {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&#39;"),
+            c => escaped.push(c),
+        }
+    }
+
+    escaped
+}
+
 /// The key a big integer is transported under.
 const BIG_INTEGER_KEY: &str = "$bigint";
 
@@ -76,6 +94,14 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<Value>(&json).unwrap(),
             json!({ "html": "</script><b>&" })
+        );
+    }
+
+    #[test]
+    fn escapes_attribute_values() {
+        assert_eq!(
+            escape_attribute(r#"app" onload='x' <&>"#),
+            "app&quot; onload=&#39;x&#39; &lt;&amp;&gt;"
         );
     }
 
