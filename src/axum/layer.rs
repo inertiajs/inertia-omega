@@ -96,12 +96,13 @@ impl InertiaLayer {
             .get::<OriginalUri>()
             .map_or(&parts.uri, |original| &original.0);
         let request = Request::new(parts.method.clone(), uri, parts.headers.clone());
+        let inertia = Inertia::build(Arc::clone(&self.config), request, (self.session)(&parts));
 
-        if let Some(response) = protocol::before(&request, &self.config) {
+        // Check through the handle so the page reuses this version instead of computing it again...
+        if let Some(response) = protocol::version_conflict(inertia.request(), || inertia.version()) {
             return Ok(response.map(Body::from));
         }
 
-        let inertia = Inertia::build(Arc::clone(&self.config), request, (self.session)(&parts));
         parts.extensions.insert(inertia.clone());
 
         let response = next(http::Request::from_parts(parts, body)).await?;

@@ -1,6 +1,7 @@
 //! The framework-agnostic core, exercised without a web framework.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use http::{HeaderMap, HeaderName, Method};
@@ -9,6 +10,7 @@ use inertia::testing::AssertablePage;
 use inertia::{Config, Inertia, Page, Paginator, Props, Request, ValidationErrors, props};
 use serde::Serialize;
 use serde_json::json;
+use tokio::sync::Barrier;
 
 fn config() -> Config {
     Config::new()
@@ -246,6 +248,54 @@ async fn partial_reloads_of_another_component_are_full_visits() {
 }
 
 #[tokio::test]
+async fn dot_keys_set_inside_callbacks_without_running_them_early() {
+    let loaded = Arc::new(AtomicBool::new(false));
+    let props = || {
+        let loaded = Arc::clone(&loaded);
+
+        props! {
+            "users" => ["Taylor"],
+            "auth" => inertia::lazy(move || async move {
+                loaded.store(true, Ordering::SeqCst);
+                json!({ "user": { "name": "Taylor" } })
+            }),
+            "auth.user.id" => 1,
+            "auth.permissions" => inertia::lazy(|| async { ["edit"] }),
+        }
+    };
+
+    for header in [
+        ("x-inertia-partial-data", "users"),
+        ("x-inertia-partial-except", "auth"),
+    ] {
+        let page = resolve(reload(&[header]).render("Users", props())).await;
+
+        assert!(page.props.get("auth").is_none(), "{header:?}");
+        assert!(!loaded.load(Ordering::SeqCst), "{header:?}");
+    }
+
+    let page = resolve(visit(&[]).render("Users", props())).await;
+    assert_eq!(
+        page.props["auth"],
+        json!({ "user": { "name": "Taylor", "id": 1 }, "check": true, "permissions": ["edit"] })
+    );
+}
+
+#[tokio::test]
+async fn dot_keys_replace_rescued_callbacks() {
+    let page = resolve(visit(&[]).render(
+        "Users",
+        props! {
+            "stats" => inertia::try_lazy(|| async { Err::<u8, _>("boom") }).rescue(),
+            "stats.total" => 1,
+        },
+    ))
+    .await;
+
+    assert_eq!(page.props["stats"], json!({ "total": 1 }));
+}
+
+#[tokio::test]
 async fn deferred_props_are_announced_then_loaded_by_group() {
     let props = || {
         props! {
@@ -363,6 +413,52 @@ async fn once_props_are_skipped_when_the_client_has_them() {
 }
 
 #[tokio::test]
+async fn once_props_with_huge_ttls_saturate() {
+    let page = resolve(visit(&[]).render(
+        "Users",
+        props! { "plans" => inertia::once(|| async { 1 }).until(Duration::MAX) },
+    ))
+    .await;
+
+    assert_eq!(page.metadata.once_props["plans"].expires_at, Some(u64::MAX));
+}
+
+#[test]
+fn prop_errors_are_transparent() {
+    let error = inertia::PropError::new(std::io::Error::other("database down"));
+
+    assert_eq!(error.to_string(), "database down");
+    assert!(
+        std::error::Error::source(&error).is_none(),
+        "the message would appear twice"
+    );
+}
+
+#[test]
+fn prop_errors_give_access_to_the_wrapped_error() {
+    let error = inertia::PropError::new(std::io::Error::new(std::io::ErrorKind::NotFound, "no such user"));
+
+    let wrapped = error.get_ref().downcast_ref::<std::io::Error>().unwrap();
+    assert_eq!(wrapped.kind(), std::io::ErrorKind::NotFound);
+
+    let wrapped = error.into_inner().downcast::<std::io::Error>().unwrap();
+    assert_eq!(wrapped.kind(), std::io::ErrorKind::NotFound);
+}
+
+#[tokio::test]
+async fn failed_props_keep_their_error() {
+    let props = props! {
+        "user" => inertia::try_lazy(|| async {
+            Err::<(), _>(std::io::Error::new(std::io::ErrorKind::NotFound, "no such user"))
+        }),
+    };
+
+    let error = visit(&[]).render("Users", props).into_page().await.unwrap_err();
+
+    assert!(error.get_ref().is::<std::io::Error>());
+}
+
+#[tokio::test]
 async fn scroll_props_carry_pagination_metadata() {
     let props = || {
         props! {
@@ -403,7 +499,7 @@ fn paginator_normalizes_a_zero_page() {
 
 #[tokio::test]
 async fn sibling_callbacks_resolve_concurrently() {
-    let barrier = Arc::new(tokio::sync::Barrier::new(3));
+    let barrier = Arc::new(Barrier::new(3));
     let wait = |value: u8| {
         let barrier = Arc::clone(&barrier);
         inertia::lazy(move || async move {
@@ -422,6 +518,54 @@ async fn sibling_callbacks_resolve_concurrently() {
     assert_eq!(page.props["a"], 1);
     assert_eq!(page.props["b"], 2);
     assert_eq!(page.props["c"], 3);
+}
+
+#[tokio::test]
+async fn nested_callbacks_resolve_concurrently() {
+    // Each callback waits for the others, so resolving them one after another would never finish...
+    let barrier = Arc::new(Barrier::new(3));
+    let waiting = |value: u8| {
+        let barrier = Arc::clone(&barrier);
+
+        inertia::lazy(move || async move {
+            barrier.wait().await;
+            value
+        })
+    };
+
+    let render = visit(&[]).render(
+        "Users",
+        props! {
+            "auth.user" => waiting(1),
+            "stats" => waiting(2),
+            "nested" => props! { "deeper" => props! { "total" => waiting(3) } },
+        },
+    );
+    let page = tokio::time::timeout(Duration::from_secs(5), resolve(render))
+        .await
+        .expect("the callbacks should run concurrently");
+
+    assert_eq!(page.props["auth"]["user"], 1);
+    assert_eq!(page.props["stats"], 2);
+    assert_eq!(page.props["nested"], json!({ "deeper": { "total": 3 } }));
+}
+
+#[tokio::test]
+async fn nested_metadata_is_collected_in_prop_order() {
+    let props = props! {
+        "a" => inertia::merge([1]),
+        "nested" => props! {
+            "b" => inertia::merge([2]),
+            "deeper" => props! { "c" => inertia::defer(|| async { 3 }).merge() },
+        },
+        "d" => inertia::defer(|| async { 4 }).merge(),
+        "e.f" => inertia::merge([5]),
+    };
+
+    let metadata = resolve(visit(&[]).render("Users", props)).await.metadata;
+
+    assert_eq!(metadata.merge_props, ["a", "nested.b", "nested.deeper.c", "d", "e.f"]);
+    assert_eq!(metadata.deferred_props["default"], ["nested.deeper.c", "d"]);
 }
 
 #[tokio::test]
@@ -469,6 +613,40 @@ async fn flash_data_and_errors_are_delivered_to_the_next_render() {
     assert_eq!(page.props["errors"], json!({}));
     assert!(page.flash.is_empty());
     assert!(!page.clear_history);
+}
+
+#[tokio::test]
+async fn a_failed_render_keeps_flash_data_and_errors_for_the_next() {
+    let session = ArraySession::new();
+    let inertia = || {
+        Inertia::with_session(
+            config(),
+            request(Method::GET, &[("x-inertia", "true")]),
+            session.clone(),
+        )
+    };
+    let broken = || props! { "broken" => inertia::try_lazy(|| async { Err::<u8, _>("boom") }) };
+
+    let post = inertia();
+    post.flash("stored", 1)
+        .with_errors(ValidationErrors::new().with("name", "Required."));
+    post.commit().await;
+
+    // Queue pending state in the failing request, as a middleware would...
+    let get = inertia();
+    get.flash("pending", 2)
+        .with_errors_in("other", ValidationErrors::new().with("email", "Invalid."));
+    get.clear_history();
+    assert!(get.render("Users", broken()).into_page().await.is_err());
+    get.commit().await;
+
+    let page = resolve(inertia().render("Users", ())).await;
+    assert_eq!(
+        serde_json::to_value(&page.flash).unwrap(),
+        json!({ "stored": 1, "pending": 2 })
+    );
+    assert_eq!(page.props["errors"], json!({ "name": "Required." }));
+    assert!(page.clear_history);
 }
 
 #[tokio::test]
@@ -533,6 +711,20 @@ async fn first_visits_render_the_root_view() {
     assert!(body.contains(r#"<div id="app"></div>"#));
     assert!(!body.contains("</script><b>"));
     AssertablePage::from_body(body).equals("html", "</script><b>&");
+}
+
+#[tokio::test]
+async fn root_ids_are_escaped() {
+    let inertia = Inertia::new(config().root_id(r#"app" onload="alert(1)"#), request(Method::GET, &[]));
+
+    let response = inertia.render("Users", ()).into_http().await;
+    let body = response.body();
+
+    assert!(!body.contains(r#"" onload=""#), "{body}");
+    assert!(
+        body.contains(r#"<div id="app&quot; onload=&quot;alert(1)"></div>"#),
+        "{body}"
+    );
 }
 
 #[cfg(feature = "validator")]

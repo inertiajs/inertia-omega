@@ -10,7 +10,7 @@ use crate::HttpResponse;
 use crate::errors::ErrorBags;
 use crate::header as inertia_header;
 use crate::inertia::Inertia;
-use crate::json::{encode_big_integers, html_safe_json};
+use crate::json::{encode_big_integers, escape_attribute, html_safe_json};
 use crate::page::Page;
 use crate::props::{self, IntoProp, PropError, Props, PropsResolver};
 use crate::session::{SharedSession, key};
@@ -206,11 +206,11 @@ impl Response {
         let props = props?;
         let config = inertia.config();
         let request = inertia.request();
-        let pending = inertia.take_pending();
+        let mut pending = inertia.take_pending();
         let stored = Stored::pull(inertia.session()).await;
 
-        let mut errors = stored.errors;
-        errors.merge(pending.errors);
+        let mut errors = stored.errors.clone();
+        errors.merge(pending.errors.clone());
 
         let mut shared = Props::new();
         shared.insert(
@@ -220,11 +220,21 @@ impl Response {
         for share in &config.shares {
             shared.extend(share(request));
         }
-        shared.extend(pending.shared);
+        shared.extend(std::mem::take(&mut pending.shared));
 
-        let (props, metadata) = PropsResolver::new(request, &component)
+        let resolved = PropsResolver::new(request, &component)
             .resolve(shared, props, config.expose_shared_prop_keys)
-            .await?;
+            .await;
+
+        // Keep flash data, errors and history flags for the next render; shared props were consumed above...
+        let (props, metadata) = match resolved {
+            Ok(resolved) => resolved,
+            Err(error) => {
+                inertia.restore_pending(pending);
+                stored.restore(inertia.session()).await;
+                return Err(error);
+            }
+        };
 
         let preserve_big_integers = preserve_big_integers.unwrap_or(config.preserve_big_integers);
         let encode = |map: Map<String, Value>| {
@@ -250,7 +260,7 @@ impl Response {
                 .url_resolver
                 .as_ref()
                 .map_or_else(|| request.url().to_owned(), |resolve| resolve(request)),
-            version: config.current_version(),
+            version: inertia.version().to_owned(),
             metadata,
             preserve_big_integers,
             clear_history: clear_history || pending.clear_history || stored.clear_history,
@@ -270,6 +280,8 @@ struct Stored {
     errors: ErrorBags,
     clear_history: bool,
     preserve_fragment: bool,
+    /// The values pulled from the session, as stored.
+    pulled: Vec<(&'static str, Value)>,
 }
 
 impl Stored {
@@ -279,21 +291,38 @@ impl Stored {
             return Self::default();
         };
 
-        Self {
-            flash: pull(session, key::FLASH).await,
-            errors: pull(session, key::ERRORS).await,
-            clear_history: pull(session, key::CLEAR_HISTORY).await,
-            preserve_fragment: pull(session, key::PRESERVE_FRAGMENT).await,
+        let mut stored = Self::default();
+        stored.flash = stored.pull_key(session, key::FLASH).await;
+        stored.errors = stored.pull_key(session, key::ERRORS).await;
+        stored.clear_history = stored.pull_key(session, key::CLEAR_HISTORY).await;
+        stored.preserve_fragment = stored.pull_key(session, key::PRESERVE_FRAGMENT).await;
+        stored
+    }
+
+    async fn pull_key<T: serde::de::DeserializeOwned + Default>(
+        &mut self,
+        session: &SharedSession,
+        key: &'static str,
+    ) -> T {
+        let Some(value) = session.pull(key).await else {
+            return T::default();
+        };
+
+        let parsed = serde_json::from_value(value.clone()).unwrap_or_default();
+        self.pulled.push((key, value));
+        parsed
+    }
+
+    /// Put the pulled state back, for the render after a failed one.
+    async fn restore(self, session: Option<&SharedSession>) {
+        let Some(session) = session else {
+            return;
+        };
+
+        for (key, value) in self.pulled {
+            session.put(key, value).await;
         }
     }
-}
-
-async fn pull<T: serde::de::DeserializeOwned + Default>(session: &SharedSession, key: &str) -> T {
-    session
-        .pull(key)
-        .await
-        .and_then(|value| serde_json::from_value(value).ok())
-        .unwrap_or_default()
 }
 
 /// The page as JSON, for Inertia visits.
@@ -328,7 +357,7 @@ async fn document(inertia: &Inertia, page: &Page, data: &Map<String, Value>, ssr
         head: String::new(),
         body: format!(
             r#"<script data-page="{id}" type="application/json">{json}</script><div id="{id}"></div>"#,
-            id = config.root_id,
+            id = escape_attribute(&config.root_id),
             json = html_safe_json(page),
         ),
     });

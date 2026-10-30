@@ -174,8 +174,10 @@ impl AssertablePage {
 /// The contents of the page data `<script>` of an HTML document.
 #[track_caller]
 fn page_script(html: &str) -> &str {
+    // Find the script with `data-page`, not just any JSON script before it...
     let Some((json, _)) = html
-        .split_once(r#"type="application/json">"#)
+        .split_once("<script data-page=")
+        .and_then(|(_, rest)| rest.split_once('>'))
         .and_then(|(_, rest)| rest.split_once("</script>"))
     else {
         // Keep the panic outside a closure so #[track_caller] reaches the test...
@@ -233,5 +235,12 @@ mod tests {
             }),
             format!("expected the Inertia asset version `2`, but it's `1`\n\n{props}")
         );
+    }
+
+    #[test]
+    fn skips_other_json_scripts() {
+        let html = format!(r#"<head><script type="application/json">{{"component":"Other"}}</script></head>{HTML}"#);
+
+        AssertablePage::from_body(&html).component("Home");
     }
 }
