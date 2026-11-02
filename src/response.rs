@@ -219,9 +219,16 @@ impl Response {
         }
         shared.extend(pending.shared);
 
-        let (props, metadata) = PropsResolver::new(request, &component)
+        let resolved = PropsResolver::new(request, &component)
             .resolve(shared, props, config.expose_shared_prop_keys)
-            .await?;
+            .await;
+        let (props, metadata) = match resolved {
+            Ok(resolved) => resolved,
+            Err(error) => {
+                inertia.requeue(handoff, pending.encrypt_history);
+                return Err(error);
+            }
+        };
 
         let preserve_big_integers = preserve_big_integers.unwrap_or(config.preserve_big_integers);
         let encode = |map: Map<String, Value>| {

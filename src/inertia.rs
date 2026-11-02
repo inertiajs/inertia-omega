@@ -197,6 +197,14 @@ impl Inertia {
         std::mem::take(&mut *self.pending())
     }
 
+    /// Put back what a failed render took, so an error page or the session still gets it.
+    pub(crate) fn requeue(&self, mut handoff: Handoff, encrypt_history: Option<bool>) {
+        let mut pending = self.pending();
+        handoff.merge(std::mem::take(&mut pending.handoff));
+        pending.handoff = handoff;
+        pending.encrypt_history = pending.encrypt_history.or(encrypt_history);
+    }
+
     /// Take flash data queued while resolving props.
     pub(crate) fn take_flash(&self) -> Map<String, Value> {
         std::mem::take(&mut self.pending().handoff.flash)
