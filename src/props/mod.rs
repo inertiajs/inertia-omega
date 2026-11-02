@@ -22,29 +22,42 @@ pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 /// An error raised while resolving a prop.
 #[derive(Debug)]
-pub struct PropError(BoxError);
+pub struct PropError {
+    error: BoxError,
+    type_name: &'static str,
+}
 
 impl PropError {
     /// Wrap an error.
-    pub fn new(error: impl Into<BoxError>) -> Self {
-        Self(error.into())
+    pub fn new<E: Into<BoxError>>(error: E) -> Self {
+        Self {
+            error: error.into(),
+            type_name: std::any::type_name::<E>(),
+        }
+    }
+
+    /// The name of the error's type, as [`std::any::type_name`] gives it,
+    /// since the boxed error from [`into_inner`](Self::into_inner) no longer
+    /// has it.
+    pub fn type_name(&self) -> &'static str {
+        self.type_name
     }
 
     /// The error the prop failed with.
     pub fn into_inner(self) -> BoxError {
-        self.0
+        self.error
     }
 }
 
 impl fmt::Display for PropError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
+        self.error.fmt(f)
     }
 }
 
 impl std::error::Error for PropError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&*self.0)
+        Some(&*self.error)
     }
 }
 

@@ -302,6 +302,20 @@ async fn unrescued_failures_fail_the_render() {
     );
 
     assert_eq!(response.into_page().await.unwrap_err().to_string(), "boom");
+
+    for broken in [
+        inertia::lazy(async || Err::<u8, _>(std::io::Error::other("disk"))),
+        inertia::try_lazy(async || Err::<u8, _>(std::io::Error::other("disk"))),
+    ] {
+        let error = visit(&[])
+            .render("Users", props! { broken => broken })
+            .into_page()
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.type_name(), std::any::type_name::<std::io::Error>());
+        assert!(error.into_inner().is::<std::io::Error>());
+    }
 }
 
 #[tokio::test]
