@@ -255,7 +255,7 @@ Flash data queued by prop callbacks also reaches the page being rendered. Values
 
 | Call | Response |
 | --- | --- |
-| `inertia::redirect("/users")` | `302`. After `PUT`, `PATCH` and `DELETE` the layer makes it a `303`, so the browser follows it with a `GET`. |
+| `inertia::redirect("/users")` | `302`. After `PUT`, `PATCH`, `DELETE` and `QUERY` the layer makes it a `303`, so the browser follows it with a `GET`. |
 | `inertia.back()` | A redirect to the `Referer`. |
 | `inertia.location("https://..")` | A full page visit: `409` with `X-Inertia-Location` for Inertia visits. Use it for external URLs. |
 
