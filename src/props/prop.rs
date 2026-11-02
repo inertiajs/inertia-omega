@@ -6,6 +6,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::{PropError, Props, ScrollMetadata};
+use crate::page::{LiveListener, LiveState};
 
 /// A single page prop.
 ///
@@ -55,6 +56,7 @@ pub(crate) struct Options {
     pub(crate) merge: Option<Merge>,
     pub(crate) once: Option<Once>,
     pub(crate) scroll: Option<Scroll>,
+    pub(crate) live: Option<LiveState>,
 }
 
 /// When a prop is sent to the client.
@@ -242,6 +244,42 @@ impl Prop {
 
     fn once_options(&mut self) -> &mut Once {
         self.options.once.get_or_insert_with(Once::default)
+    }
+
+    /// Refresh the prop with a partial reload whenever the client receives
+    /// one of the listeners' broadcast events. Calling it again adds more
+    /// listeners. A live prop can't also merge.
+    ///
+    /// ```
+    /// use inertia::{LiveChannel, LiveListener};
+    ///
+    /// let order = inertia::lazy(async || "shipped")
+    ///     .live([LiveListener::new(LiveChannel::private("orders.1"), ["OrderUpdated"])]);
+    /// ```
+    pub fn live(mut self, listeners: impl IntoIterator<Item = LiveListener>) -> Self {
+        let live = self.live_options();
+
+        for LiveListener { channel, events } in listeners {
+            for event in events {
+                match live.listeners.iter_mut().find(|listener| listener.channel == channel) {
+                    Some(listener) if listener.events.contains(&event) => {}
+                    Some(listener) => listener.events.push(event),
+                    None => live.listeners.push(LiveListener::new(channel.clone(), [event])),
+                }
+            }
+        }
+
+        self
+    }
+
+    /// Refresh the live prop at most once per the given duration.
+    pub fn throttle(mut self, throttle: Duration) -> Self {
+        self.live_options().throttle = Some(u64::try_from(throttle.as_millis()).unwrap_or(u64::MAX));
+        self
+    }
+
+    fn live_options(&mut self) -> &mut LiveState {
+        self.options.live.get_or_insert_with(LiveState::default)
     }
 
     /// Set the key holding the items of an infinite scroll prop (`data` by default).

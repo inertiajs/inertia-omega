@@ -99,6 +99,8 @@ impl<'a> PropsResolver<'a> {
                     format!("{prefix}.{key}")
                 };
 
+                check_live(&options, &path)?;
+
                 if !self.is_included_in_partial_reload(&options, &path, parent_was_resolved) {
                     continue;
                 }
@@ -178,7 +180,7 @@ impl<'a> PropsResolver<'a> {
                     Err(error) => return Err(error),
                 };
 
-                self.collect_metadata(&options, &path);
+                self.collect_metadata(&options, &path, parent_was_resolved);
 
                 let parent_was_resolved = parent_was_resolved || options.always;
                 let value = match value {
@@ -288,10 +290,12 @@ impl<'a> PropsResolver<'a> {
         if let Some(once) = &options.once {
             self.collect_once_metadata(once, path);
         }
+
+        self.collect_live_metadata(options, path, false);
     }
 
     /// Collect the metadata of a prop that is part of the response.
-    fn collect_metadata(&mut self, options: &Options, path: &str) {
+    fn collect_metadata(&mut self, options: &Options, path: &str, parent_was_resolved: bool) {
         if let Some(merge) = &options.merge {
             self.collect_merge_metadata(merge, path);
         }
@@ -307,6 +311,8 @@ impl<'a> PropsResolver<'a> {
         if let Some(once) = &options.once {
             self.collect_once_metadata(once, path);
         }
+
+        self.collect_live_metadata(options, path, parent_was_resolved);
     }
 
     fn collect_merge_metadata(&mut self, merge: &Merge, path: &str) {
@@ -338,6 +344,21 @@ impl<'a> PropsResolver<'a> {
             .extend(merge.match_on.iter().map(|key| format!("{path}.{key}")));
     }
 
+    /// Collect a live prop's listeners. Props sent regardless of the partial
+    /// reload's filters, as always props and children of resolved props are,
+    /// send their listeners too, since those may have changed with the value.
+    fn collect_live_metadata(&mut self, options: &Options, path: &str, parent_was_resolved: bool) {
+        let Some(live) = &options.live else {
+            return;
+        };
+
+        if self.is_partial && !options.always && !parent_was_resolved && !self.contributes_partial_metadata(path) {
+            return;
+        }
+
+        self.metadata.live_props.insert(path.to_owned(), live.clone());
+    }
+
     fn collect_once_metadata(&mut self, once: &Once, path: &str) {
         if self.is_partial && !self.contributes_partial_metadata(path) {
             return;
@@ -358,6 +379,28 @@ impl<'a> PropsResolver<'a> {
             },
         );
     }
+}
+
+/// Fail on a live prop the client couldn't follow.
+fn check_live(options: &Options, path: &str) -> Result<(), PropError> {
+    let Some(live) = &options.live else {
+        return Ok(());
+    };
+
+    // A refresh would merge into the old value instead of replacing it...
+    if options.merge.is_some() {
+        return Err(PropError::new(format!(
+            "the `{path}` prop is live, and live props can't merge"
+        )));
+    }
+
+    if live.listeners.is_empty() {
+        return Err(PropError::new(format!(
+            "the live `{path}` prop must listen for at least one event"
+        )));
+    }
+
+    Ok(())
 }
 
 /// Whether `path` is `ancestor` or one of its descendants.
@@ -421,6 +464,7 @@ fn is_plain(options: &Options) -> bool {
         && options.merge.is_none()
         && options.once.is_none()
         && options.scroll.is_none()
+        && options.live.is_none()
 }
 
 /// Resolve a prop into nested props, or `None` when it isn't an object.

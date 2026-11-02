@@ -6,7 +6,7 @@ use std::time::Duration;
 use http::{HeaderMap, HeaderName, Method};
 use inertia::session::ArraySession;
 use inertia::testing::AssertablePage;
-use inertia::{Config, Inertia, Page, Paginator, Props, Request, ValidationErrors, props};
+use inertia::{Config, Inertia, LiveChannel, LiveListener, Page, Paginator, Props, Request, ValidationErrors, props};
 use serde::Serialize;
 use serde_json::json;
 
@@ -730,5 +730,224 @@ async fn conditional_props_are_only_sent_when_their_condition_holds() {
     assert_eq!(page.props["auth"]["role"], json!("editor"));
     for missing in ["stats", "upgrade"] {
         assert!(page.props.get(missing).is_none(), "{missing}: {:?}", page.props);
+    }
+}
+
+fn order_listeners() -> Vec<LiveListener> {
+    vec![LiveListener::new(LiveChannel::private("orders.1"), ["OrderUpdated"])]
+}
+
+/// The `liveProps` of a page, as the client receives them.
+fn live_props(page: &Page) -> serde_json::Value {
+    serde_json::to_value(page).unwrap()["liveProps"].clone()
+}
+
+#[tokio::test]
+async fn live_props_announce_their_listeners() {
+    let page = resolve(visit(&[]).render(
+        "Users",
+        props! {
+            order => inertia::lazy(async || "bar").live(order_listeners()),
+            metrics => inertia::live("baz", order_listeners()).throttle(Duration::from_millis(500)),
+            plain => "qux",
+        },
+    ))
+    .await;
+
+    assert_eq!(page.props["order"], "bar");
+    assert_eq!(page.props["metrics"], "baz");
+    assert_eq!(
+        live_props(&page),
+        json!({
+            "order": {
+                "listeners": [{ "channel": { "name": "orders.1", "type": "private" }, "events": ["OrderUpdated"] }],
+            },
+            "metrics": {
+                "listeners": [{ "channel": { "name": "orders.1", "type": "private" }, "events": ["OrderUpdated"] }],
+                "throttle": 500,
+            },
+        })
+    );
+
+    let page = resolve(visit(&[]).render("Users", props! { plain => "qux" })).await;
+    assert!(serde_json::to_value(&page).unwrap().get("liveProps").is_none());
+}
+
+#[tokio::test]
+async fn live_listeners_on_the_same_channel_collapse() {
+    let order = inertia::live(
+        "bar",
+        [
+            LiveListener::new(LiveChannel::private("orders.1"), ["OrderUpdated", "OrderUpdated"]),
+            LiveListener::new(LiveChannel::public("orders.1"), ["OrderUpdated"]),
+            LiveListener::new(LiveChannel::presence("orders.1"), Vec::<String>::new()),
+        ],
+    )
+    .throttle(Duration::from_secs(5))
+    .live([
+        LiveListener::new(LiveChannel::private("orders.1"), ["OrderShipped", "OrderUpdated"]),
+        LiveListener::new(LiveChannel::encrypted_private("orders.1"), ["OrderPaid"]),
+    ]);
+
+    let page = resolve(visit(&[]).render("Users", props! { order => order })).await;
+
+    assert_eq!(
+        live_props(&page),
+        json!({
+            "order": {
+                "listeners": [
+                    { "channel": { "name": "orders.1", "type": "private" }, "events": ["OrderUpdated", "OrderShipped"] },
+                    { "channel": { "name": "orders.1", "type": "public" }, "events": ["OrderUpdated"] },
+                    { "channel": { "name": "orders.1", "type": "encrypted-private" }, "events": ["OrderPaid"] },
+                ],
+                "throttle": 5000,
+            },
+        })
+    );
+}
+
+#[tokio::test]
+async fn props_left_out_of_the_first_visit_are_still_live() {
+    let props = || {
+        props! {
+            deferred => inertia::defer(async || 1).live(order_listeners()),
+            optional => inertia::optional(async || 2).live(order_listeners()),
+            always => inertia::always(3).live(order_listeners()),
+            once => inertia::once(async || 4).live(order_listeners()),
+            rescued => inertia::try_lazy(async || Err::<u8, _>("boom")).deferred().rescue().live(order_listeners()),
+        }
+    };
+
+    let page = resolve(visit(&[("x-inertia-except-once-props", "once")]).render("Users", props())).await;
+
+    assert_eq!(page.props.get("always"), Some(&json!(3)));
+    assert!(page.props.get("deferred").is_none());
+    assert!(page.props.get("optional").is_none());
+    assert!(page.props.get("once").is_none());
+    assert_eq!(
+        page.metadata.live_props.keys().collect::<Vec<_>>(),
+        ["deferred", "optional", "always", "once", "rescued"]
+    );
+}
+
+#[tokio::test]
+async fn partial_reloads_only_announce_the_listeners_they_send() {
+    let props = || {
+        props! {
+            order => inertia::always("bar").live(order_listeners()),
+            metrics => inertia::lazy(async || "baz").live(order_listeners()),
+            status => inertia::lazy(async || "ready").live(order_listeners()),
+            summary => inertia::always(props! {
+                total => inertia::live(100, order_listeners()),
+            }),
+        }
+    };
+
+    let page = resolve(reload(&[("x-inertia-partial-data", "metrics")]).render("Users", props())).await;
+    assert_eq!(
+        serde_json::to_value(&page.props).unwrap(),
+        json!({ "errors": {}, "order": "bar", "metrics": "baz", "summary": { "total": 100 } })
+    );
+    assert_eq!(
+        page.metadata.live_props.keys().collect::<Vec<_>>(),
+        ["order", "metrics", "summary.total"]
+    );
+
+    let page = resolve(reload(&[("x-inertia-partial-except", "status,summary")]).render("Users", props())).await;
+    assert_eq!(
+        page.metadata.live_props.keys().collect::<Vec<_>>(),
+        ["order", "metrics", "summary.total"],
+        "an always prop outranks except, so its children's listeners are sent"
+    );
+
+    let page = resolve(reload(&[("x-inertia-partial-except", "metrics")]).render(
+        "Users",
+        props! {
+            metrics => inertia::lazy(async || "baz").live(order_listeners()),
+            status => inertia::lazy(async || "ready").live(order_listeners()),
+        },
+    ))
+    .await;
+    assert_eq!(page.metadata.live_props.keys().collect::<Vec<_>>(), ["status"]);
+}
+
+#[tokio::test]
+async fn a_rescued_live_prop_that_failed_announces_nothing() {
+    let page = resolve(reload(&[("x-inertia-partial-data", "orders")]).render(
+        "Users",
+        props! {
+            orders => inertia::try_lazy(async || Err::<u8, _>("boom")).deferred().rescue().live(order_listeners()),
+        },
+    ))
+    .await;
+
+    assert_eq!(page.metadata.rescued_props, ["orders"]);
+    assert!(page.metadata.live_props.is_empty());
+}
+
+#[tokio::test]
+async fn nested_live_props_are_keyed_by_their_path() {
+    let page = resolve(visit(&[]).render(
+        "Users",
+        props! {
+            order => props! { total => inertia::live(100, order_listeners()) },
+            "invoice.total" => inertia::live(200, order_listeners()),
+        },
+    ))
+    .await;
+
+    assert_eq!(page.props["order"], json!({ "total": 100 }));
+    assert_eq!(page.props["invoice"], json!({ "total": 200 }));
+    assert_eq!(
+        page.metadata.live_props.keys().collect::<Vec<_>>(),
+        ["order.total", "invoice.total"]
+    );
+}
+
+#[tokio::test]
+async fn live_props_that_merge_or_listen_for_nothing_fail_the_render() {
+    let failures = [
+        (
+            "merged",
+            inertia::merge(vec![1]).live(order_listeners()),
+            "live props can't merge",
+        ),
+        (
+            "deep",
+            inertia::live(1, order_listeners()).deep_merge(),
+            "live props can't merge",
+        ),
+        (
+            "paths",
+            inertia::live(1, order_listeners()).append_at("data"),
+            "live props can't merge",
+        ),
+        (
+            "matched",
+            inertia::live(1, order_listeners()).match_on("id"),
+            "live props can't merge",
+        ),
+        (
+            "scroll",
+            inertia::scroll(Paginator::from_items(vec![1], 15, 1)).live(order_listeners()),
+            "live props can't merge",
+        ),
+        (
+            "throttled",
+            inertia::lazy(async || 1).throttle(Duration::from_secs(1)),
+            "at least one event",
+        ),
+        ("empty", inertia::live(1, []), "at least one event"),
+    ];
+
+    for (key, prop, message) in failures {
+        let error = visit(&[])
+            .render("Users", Props::new().with(key, prop))
+            .into_page()
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains(key), "{error}");
+        assert!(error.to_string().contains(message), "{error}");
     }
 }

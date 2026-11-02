@@ -12,6 +12,8 @@ use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::page::LiveListener;
+
 pub(crate) use self::prop::{Computed, Loading, Merge, Once, Source};
 pub use self::prop::{IntoProp, Prop};
 pub(crate) use self::resolver::PropsResolver;
@@ -346,6 +348,21 @@ where
 /// didn't ask for it.
 pub fn always(value: impl IntoProp) -> Prop {
     value.into_prop().always()
+}
+
+/// A prop the client refreshes with a partial reload whenever it receives
+/// one of the listeners' broadcast events.
+///
+/// ```
+/// use inertia::{LiveChannel, LiveListener};
+///
+/// let order = inertia::live(
+///     inertia::lazy(async || "shipped"),
+///     [LiveListener::new(LiveChannel::private("orders.1"), ["OrderUpdated"])],
+/// );
+/// ```
+pub fn live(value: impl IntoProp, listeners: impl IntoIterator<Item = LiveListener>) -> Prop {
+    value.into_prop().live(listeners)
 }
 
 /// A prop that is appended to its client-side value instead of replacing it.
