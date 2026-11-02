@@ -37,7 +37,7 @@ pub fn before(request: &Request, config: &Config) -> Option<HttpResponse> {
 /// visits:
 ///
 /// - turns an empty `200` into a redirect back,
-/// - turns a `302` after `PUT`, `PATCH` or `DELETE` into a `303`, so the
+/// - turns a `302` after `PUT`, `PATCH`, `DELETE` or `QUERY` into a `303`, so the
 ///   browser follows it with a `GET`,
 /// - turns a redirect to a URL with a fragment into a `409 Conflict` with
 ///   `X-Inertia-Redirect`, since `fetch` drops fragments when following.
@@ -72,7 +72,7 @@ pub fn after(request: &Request, response: &mut response::Parts, body_is_empty: b
     None
 }
 
-/// A `302 Found` redirect. After `PUT`, `PATCH` and `DELETE` Inertia visits,
+/// A `302 Found` redirect. After `PUT`, `PATCH`, `DELETE` and `QUERY` Inertia visits,
 /// [`after`] turns it into a `303 See Other`.
 #[must_use = "a redirect does nothing unless it's returned"]
 pub fn redirect(to: &str) -> HttpResponse {
@@ -97,7 +97,7 @@ pub fn location(request: &Request, url: &str) -> HttpResponse {
 }
 
 fn see_other_after_mutation(request: &Request, status: &mut StatusCode) {
-    if *status == StatusCode::FOUND && matches!(*request.method(), Method::PUT | Method::PATCH | Method::DELETE) {
+    if *status == StatusCode::FOUND && matches!(request.method().as_str(), "PUT" | "PATCH" | "DELETE" | "QUERY") {
         *status = StatusCode::SEE_OTHER;
     }
 }
@@ -195,6 +195,15 @@ mod tests {
         assert!(after(&request(Method::PUT, &[("x-inertia", "true")]), &mut response, true).is_none());
         assert_eq!(response.status, StatusCode::SEE_OTHER);
         assert_eq!(response.headers["vary"], "X-Inertia");
+
+        let query = Method::from_bytes(b"QUERY").unwrap();
+        let mut response = parts(StatusCode::FOUND, Some("/users"));
+        after(&request(query, &[("x-inertia", "true")]), &mut response, true);
+        assert_eq!(response.status, StatusCode::SEE_OTHER);
+
+        let mut response = parts(StatusCode::FOUND, Some("/users"));
+        after(&request(Method::POST, &[("x-inertia", "true")]), &mut response, true);
+        assert_eq!(response.status, StatusCode::FOUND);
     }
 
     #[test]

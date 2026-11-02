@@ -7,13 +7,12 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use crate::HttpResponse;
-use crate::errors::ErrorBags;
 use crate::header as inertia_header;
 use crate::inertia::Inertia;
 use crate::json::{encode_big_integers, html_safe_json};
 use crate::page::Page;
 use crate::props::{self, IntoProp, PropError, Props, PropsResolver};
-use crate::session::{SharedSession, key};
+use crate::session::Handoff;
 use crate::ssr::Rendered;
 use crate::view::View;
 
@@ -207,24 +206,29 @@ impl Response {
         let config = inertia.config();
         let request = inertia.request();
         let pending = inertia.take_pending();
-        let stored = Stored::pull(inertia.session()).await;
-
-        let mut errors = stored.errors;
-        errors.merge(pending.errors);
+        let mut handoff = Handoff::pull(inertia.session()).await;
+        handoff.merge(pending.handoff);
 
         let mut shared = Props::new();
         shared.insert(
             "errors",
-            props::always(errors.to_prop(request.error_bag(), config.all_errors)),
+            props::always(handoff.errors.to_prop(request.error_bag(), config.all_errors)),
         );
         for share in &config.shares {
             shared.extend(share(request));
         }
         shared.extend(pending.shared);
 
-        let (props, metadata) = PropsResolver::new(request, &component)
+        let resolved = PropsResolver::new(request, &component)
             .resolve(shared, props, config.expose_shared_prop_keys)
-            .await?;
+            .await;
+        let (props, metadata) = match resolved {
+            Ok(resolved) => resolved,
+            Err(error) => {
+                inertia.requeue(handoff, pending.encrypt_history);
+                return Err(error);
+            }
+        };
 
         let preserve_big_integers = preserve_big_integers.unwrap_or(config.preserve_big_integers);
         let encode = |map: Map<String, Value>| {
@@ -238,10 +242,8 @@ impl Response {
             }
         };
 
-        let mut all_flash = stored.flash;
-        all_flash.extend(pending.flash);
-        all_flash.extend(inertia.take_flash());
-        all_flash.extend(flash);
+        handoff.flash.extend(inertia.take_flash());
+        handoff.flash.extend(flash);
 
         Ok(Page {
             component,
@@ -253,47 +255,14 @@ impl Response {
             version: config.current_version(),
             metadata,
             preserve_big_integers,
-            clear_history: clear_history || pending.clear_history || stored.clear_history,
+            clear_history: clear_history || handoff.clear_history,
             encrypt_history: encrypt_history
                 .or(pending.encrypt_history)
                 .unwrap_or(config.encrypt_history),
-            flash: encode(all_flash),
-            preserve_fragment: pending.preserve_fragment || stored.preserve_fragment,
+            flash: encode(handoff.flash),
+            preserve_fragment: handoff.preserve_fragment,
         })
     }
-}
-
-/// What previous requests left in the session for this page.
-#[derive(Default)]
-struct Stored {
-    flash: Map<String, Value>,
-    errors: ErrorBags,
-    clear_history: bool,
-    preserve_fragment: bool,
-}
-
-impl Stored {
-    /// Pull the stored state, so it's delivered to this page only.
-    async fn pull(session: Option<&SharedSession>) -> Self {
-        let Some(session) = session else {
-            return Self::default();
-        };
-
-        Self {
-            flash: pull(session, key::FLASH).await,
-            errors: pull(session, key::ERRORS).await,
-            clear_history: pull(session, key::CLEAR_HISTORY).await,
-            preserve_fragment: pull(session, key::PRESERVE_FRAGMENT).await,
-        }
-    }
-}
-
-async fn pull<T: serde::de::DeserializeOwned + Default>(session: &SharedSession, key: &str) -> T {
-    session
-        .pull(key)
-        .await
-        .and_then(|value| serde_json::from_value(value).ok())
-        .unwrap_or_default()
 }
 
 /// The page as JSON, for Inertia visits.
