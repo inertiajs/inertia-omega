@@ -51,6 +51,7 @@ fn app(config: Config) -> Router {
                     props! {
                         "post" => "Hello",
                         "reviews" => inertia::optional(|| async { ["Great"] }),
+                        "stats" => inertia::defer(|| async { 42 }),
                     },
                 )
             }),
@@ -408,4 +409,17 @@ async fn pages_reload_the_props_they_ask_for() {
         .missing("post")
         .equals("reviews", ["Great"])
         .equals("auth.user", "Taylor");
+}
+
+#[tokio::test]
+async fn deferred_props_load_after_the_first_render() {
+    let app = app(config());
+    let page = reloadable(&app, &send(&app, get_("/posts")).await);
+    page.missing("stats").deferred("default", &["stats"]);
+
+    page.load_deferred_props()
+        .await
+        .equals("stats", 42)
+        .missing("post")
+        .missing("reviews");
 }
