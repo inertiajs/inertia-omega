@@ -62,6 +62,27 @@ pub fn encode_big_integers(value: Value) -> Value {
     }
 }
 
+/// Turn [`encode_big_integers`]'s markers back into integers.
+pub(crate) fn decode_big_integers(value: Value) -> Value {
+    match value {
+        Value::Object(object) => match object.get(BIG_INTEGER_KEY).and_then(Value::as_str) {
+            Some(digits) if object.len() == 1 => digits
+                .parse::<u64>()
+                .map(Value::from)
+                .or_else(|_| digits.parse::<i64>().map(Value::from))
+                .unwrap_or(Value::Object(object)),
+            _ => Value::Object(
+                object
+                    .into_iter()
+                    .map(|(key, value)| (key, decode_big_integers(value)))
+                    .collect(),
+            ),
+        },
+        Value::Array(items) => Value::Array(items.into_iter().map(decode_big_integers).collect()),
+        value => value,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -86,5 +107,9 @@ mod tests {
         assert_eq!(value["id"], json!({ "$bigint": "18446744073709551615" }));
         assert_eq!(value["small"], 1);
         assert_eq!(value["negative"], json!({ "$bigint": "-9223372036854775808" }));
+        assert_eq!(
+            decode_big_integers(value),
+            json!({ "id": u64::MAX, "small": 1, "negative": i64::MIN })
+        );
     }
 }

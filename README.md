@@ -341,11 +341,29 @@ AssertablePage::from_body(&body)
     .flash("toast", "Saved!");
 ```
 
+To assert on a nested object or list, scope into it with `scope`, `first` or `each`. A scope fails when the closure leaves one of its props unchecked, unless the closure calls `etc()`:
+
+```rust
+page.has_count("users", 3)
+    .first("users", |user| {
+        user.equals("name", "Taylor")
+            .satisfies("id", |id: u64| id > 0)
+            .missing("password")
+            .etc()
+    })
+    .contains("tags", "rust")
+    .has_count_in("tags", 1..=5)
+    .has_flash("toast.message");
+```
+
+With `pages_in("resources/js/pages")`, `component` also asserts that the component has a page file, such as `Users/Index.tsx`.
+
 A page can reload itself as the Inertia client does, with an Inertia visit to its URL that sends its component and asset version. `reload`, `reload_only` and `reload_except` return a future of the reloaded page, after asserting that it has the same component, URL and asset version, and that it has the `only` props and lacks the `except` props:
 
 ```rust
 page.reload_only(&["reviews"]).await.has_count("reviews", 3).missing("post");
 page.reload_except(&["head"]).await.has("post");
+page.load_deferred_props().await.has("stats");
 ```
 
 A page from `from_body` can't send requests on its own. Give it a function with `reloads_with` that sends a `ReloadRequest` to your application and reads the page from the response, as `reloadable` in [`tests/axum.rs`](tests/axum.rs) does for an Axum `Router`.
@@ -431,8 +449,11 @@ Implement the `Session` trait (`get`, `put`, `pull`) for the framework's session
 | `Inertia::clearHistory()` / `encryptHistory()` | `inertia.clear_history()` / `.encrypt_history(true)` |
 | `$response->assertInertia(fn ($page) => ..)` | `AssertablePage::from_body(&body)..` |
 | `$page->reloadOnly('reviews', fn ($page) => ..)` | `page.reload_only(&["reviews"]).await..` |
+| `$page->loadDeferredProps(fn ($page) => ..)` | `page.load_deferred_props().await..` |
+| `$page->has('user', fn ($user) => $user->where(..)->etc())` | `page.scope("user", \|user\| user.equals(..).etc())` |
+| `$page->where('views', fn ($views) => $views > 10)` | `page.satisfies("views", \|views: u64\| views > 10)` |
 
-Not ported yet: Inertia DevTools, `ProvidesInertiaProperties`, component name transformers, the `ensure_pages_exist` check, and Precognition.
+Not ported yet: Inertia DevTools, `ProvidesInertiaProperties`, component name transformers, the render-time `pages.ensure_pages_exist` check, and Precognition.
 
 ## Acknowledgements
 
