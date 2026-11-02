@@ -43,6 +43,18 @@ fn app(config: Config) -> Router {
             "/headed",
             get(|inertia: Inertia| async move { inertia.render("Home", ()).with_header("x-page", "home") }),
         )
+        .route(
+            "/posts",
+            get(|inertia: Inertia| async move {
+                inertia.render(
+                    "Posts/Show",
+                    props! {
+                        "post" => "Hello",
+                        "reviews" => inertia::optional(|| async { ["Great"] }),
+                    },
+                )
+            }),
+        )
         .route("/update", put(|| async { inertia::redirect("/") }))
         .route("/fragment", post(|| async { inertia::redirect("/page#section") }))
         .route("/empty", put(|| async { StatusCode::OK }))
@@ -115,6 +127,17 @@ fn get_(uri: &str) -> http::Request<Body> {
         .header("host", "localhost")
         .body(Body::empty())
         .unwrap()
+}
+
+/// A page that reloads itself through the app, as a test client would.
+fn reloadable(app: &Router, response: &TestResponse) -> AssertablePage {
+    let app = app.clone();
+    response.page().reloads_with(move |reload| {
+        let mut request = get_(reload.url());
+        request.headers_mut().extend(reload.headers().clone());
+        let app = app.clone();
+        async move { send(&app, request).await.page() }
+    })
 }
 
 #[tokio::test]
@@ -366,4 +389,23 @@ async fn handle_with_responds_to_a_failing_prop() {
         .component("Error")
         .equals("message", "The stats are down")
         .equals("appName", "Demo");
+}
+
+#[tokio::test]
+async fn pages_reload_the_props_they_ask_for() {
+    let app = app(config());
+    let page = reloadable(&app, &send(&app, get_("/posts?tab=reviews")).await);
+    page.url("/posts?tab=reviews").has("post").missing("reviews");
+
+    page.reload().await.has("post").missing("reviews");
+    page.reload_only(&["reviews"])
+        .await
+        .equals("reviews", ["Great"])
+        .missing("post")
+        .missing("auth");
+    page.reload_except(&["post"])
+        .await
+        .missing("post")
+        .equals("reviews", ["Great"])
+        .equals("auth.user", "Taylor");
 }

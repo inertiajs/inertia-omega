@@ -341,6 +341,15 @@ AssertablePage::from_body(&body)
     .flash("toast", "Saved!");
 ```
 
+A page can reload itself as the Inertia client does, with an Inertia visit to its URL that sends its component and asset version. `reload`, `reload_only` and `reload_except` return a future of the reloaded page, after asserting that it has the same component, URL and asset version, and that it has the `only` props and lacks the `except` props:
+
+```rust
+page.reload_only(&["reviews"]).await.has_count("reviews", 3).missing("post");
+page.reload_except(&["head"]).await.has("post");
+```
+
+A page from `from_body` can't send requests on its own. Give it a function with `reloads_with` that sends a `ReloadRequest` to your application and reads the page from the response, as `reloadable` in [`tests/axum.rs`](tests/axum.rs) does for an Axum `Router`.
+
 The core can also be tested without a web framework. Build an `Inertia` handle from a `Request` and an `ArraySession`, then resolve a render with `Response::into_page`. See [`tests/core.rs`](tests/core.rs).
 
 ## Architecture and writing an adapter
@@ -421,6 +430,7 @@ Implement the `Session` trait (`get`, `put`, `pull`) for the framework's session
 | `Inertia::location($url)` | `inertia.location(url)` |
 | `Inertia::clearHistory()` / `encryptHistory()` | `inertia.clear_history()` / `.encrypt_history(true)` |
 | `$response->assertInertia(fn ($page) => ..)` | `AssertablePage::from_body(&body)..` |
+| `$page->reloadOnly('reviews', fn ($page) => ..)` | `page.reload_only(&["reviews"]).await..` |
 
 Not ported yet: Inertia DevTools, `ProvidesInertiaProperties`, component name transformers, the `ensure_pages_exist` check, and Precognition.
 
