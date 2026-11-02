@@ -8,12 +8,12 @@ use serde_json::{Map, Value};
 
 use crate::HttpResponse;
 use crate::config::Config;
-use crate::errors::{ErrorBags, ValidationErrors};
+use crate::errors::ValidationErrors;
 use crate::props::{IntoProp, IntoProps, Props};
 use crate::protocol;
 use crate::request::Request;
 use crate::response::Response;
-use crate::session::{Session, SharedSession, key};
+use crate::session::{Handoff, Session, SharedSession};
 
 /// Inertia, for the current request.
 ///
@@ -47,10 +47,7 @@ struct Context {
 #[derive(Default)]
 pub(crate) struct Pending {
     pub(crate) shared: Props,
-    pub(crate) flash: Map<String, Value>,
-    pub(crate) errors: ErrorBags,
-    pub(crate) clear_history: bool,
-    pub(crate) preserve_fragment: bool,
+    pub(crate) handoff: Handoff,
     pub(crate) encrypt_history: Option<bool>,
 }
 
@@ -113,7 +110,7 @@ impl Inertia {
         let key = key.into();
         match serde_json::to_value(value) {
             Ok(value) => {
-                self.pending().flash.insert(key, value);
+                self.pending().handoff.flash.insert(key, value);
             }
             Err(error) => tracing::error!(%error, "failed to serialize Inertia flash data"),
         }
@@ -129,19 +126,19 @@ impl Inertia {
     pub fn with_errors_in(&self, bag: impl Into<String>, errors: impl Into<ValidationErrors>) -> &Self {
         let bag = bag.into();
         let errors = errors.into();
-        self.pending().errors.add(bag, errors);
+        self.pending().handoff.errors.add(bag, errors);
         self
     }
 
     /// Clear the browser history on the next page, so encrypted pages can't be restored.
     pub fn clear_history(&self) -> &Self {
-        self.pending().clear_history = true;
+        self.pending().handoff.clear_history = true;
         self
     }
 
     /// Keep the URL fragment of the current visit across the next redirect.
     pub fn preserve_fragment(&self) -> &Self {
-        self.pending().preserve_fragment = true;
+        self.pending().handoff.preserve_fragment = true;
         self
     }
 
@@ -175,46 +172,19 @@ impl Inertia {
     /// the session. Adapters call this once the handler and any page render
     /// have finished.
     pub async fn commit(&self) {
-        let Pending {
-            shared,
-            flash,
-            errors,
-            clear_history,
-            preserve_fragment,
-            ..
-        } = std::mem::take(&mut *self.pending());
+        let Pending { shared, handoff, .. } = std::mem::take(&mut *self.pending());
         // Drop props no page rendered after the lock, since their callbacks' captures can run application code...
         drop(shared);
 
-        let has_data = !flash.is_empty() || !errors.is_empty() || clear_history || preserve_fragment;
-
-        let Some(session) = self.session() else {
-            if has_data {
-                tracing::warn!("Inertia flash data, errors and history flags require a session; they were discarded");
-            }
+        if handoff.is_empty() {
             return;
-        };
-
-        if !flash.is_empty() {
-            let mut stored: Map<String, Value> = stored(session, key::FLASH).await;
-            stored.extend(flash);
-            session.put(key::FLASH, Value::Object(stored)).await;
         }
 
-        if !errors.is_empty() {
-            let mut stored: ErrorBags = stored(session, key::ERRORS).await;
-            stored.merge(errors);
-            session
-                .put(key::ERRORS, serde_json::to_value(stored).unwrap_or_default())
-                .await;
-        }
-
-        if clear_history {
-            session.put(key::CLEAR_HISTORY, Value::Bool(true)).await;
-        }
-
-        if preserve_fragment {
-            session.put(key::PRESERVE_FRAGMENT, Value::Bool(true)).await;
+        match self.session() {
+            Some(session) => handoff.save(session).await,
+            None => {
+                tracing::warn!("Inertia flash data, errors and history flags require a session; they were discarded")
+            }
         }
     }
 
@@ -229,21 +199,12 @@ impl Inertia {
 
     /// Take flash data queued while resolving props.
     pub(crate) fn take_flash(&self) -> Map<String, Value> {
-        std::mem::take(&mut self.pending().flash)
+        std::mem::take(&mut self.pending().handoff.flash)
     }
 
     fn pending(&self) -> MutexGuard<'_, Pending> {
         self.context.pending.lock().unwrap_or_else(PoisonError::into_inner)
     }
-}
-
-/// Read a value stored by a previous request, or its default.
-pub(crate) async fn stored<T: serde::de::DeserializeOwned + Default>(session: &SharedSession, key: &str) -> T {
-    session
-        .get(key)
-        .await
-        .and_then(|value| serde_json::from_value(value).ok())
-        .unwrap_or_default()
 }
 
 impl fmt::Debug for Inertia {
