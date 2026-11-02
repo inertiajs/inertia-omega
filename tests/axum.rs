@@ -333,21 +333,28 @@ async fn a_failing_prop_is_a_server_error() {
 
 #[tokio::test]
 async fn handle_with_responds_to_a_failing_prop() {
+    let handle = std::sync::OnceLock::new();
+    let handle = &handle;
     let response = InertiaLayer::new(config())
         .handle_with(
             get_("/"),
             |request| async move {
                 let inertia = request.extensions().get::<Inertia>().cloned().unwrap();
-                let page = failing_page(inertia.clone()).into_response();
+                inertia.share("appName", "Demo");
+                handle.set(inertia.clone()).unwrap();
+                let page = failing_page(inertia).into_response();
                 assert!(inertia::axum::is_render(&page));
 
                 Ok::<_, std::convert::Infallible>(page)
             },
-            |error| {
+            async |error| {
                 let source = error.into_inner();
                 assert!(source.downcast_ref::<std::io::Error>().is_some());
 
-                (StatusCode::SERVICE_UNAVAILABLE, source.to_string()).into_response()
+                let inertia = handle.get().unwrap();
+                inertia.share("appName", "Demo");
+                let page = inertia.render("Error", props! { "message" => source.to_string() });
+                (StatusCode::SERVICE_UNAVAILABLE, page).into_response()
             },
         )
         .await
@@ -355,5 +362,8 @@ async fn handle_with_responds_to_a_failing_prop() {
 
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     let body = response.into_body().collect().await.unwrap().to_bytes();
-    assert_eq!(body, "The stats are down");
+    AssertablePage::from_body(std::str::from_utf8(&body).unwrap())
+        .component("Error")
+        .equals("message", "The stats are down")
+        .equals("appName", "Demo");
 }
