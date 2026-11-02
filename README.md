@@ -255,7 +255,7 @@ Flash data queued by prop callbacks also reaches the page being rendered. Values
 
 | Call | Response |
 | --- | --- |
-| `inertia::redirect("/users")` | `302`. After `PUT`, `PATCH` and `DELETE` the layer makes it a `303`, so the browser follows it with a `GET`. |
+| `inertia::redirect("/users")` | `302`. After `PUT`, `PATCH`, `DELETE` and `QUERY` the layer makes it a `303`, so the browser follows it with a `GET`. |
 | `inertia.back()` | A redirect to the `Referer`. |
 | `inertia.location("https://..")` | A full page visit: `409` with `X-Inertia-Location` for Inertia visits. Use it for external URLs. |
 
@@ -341,6 +341,33 @@ AssertablePage::from_body(&body)
     .flash("toast", "Saved!");
 ```
 
+To assert on a nested object or list, scope into it with `scope`, `first`, or `each`. A scope fails if its closure doesn't assert on every prop in the scoped value, unless the closure calls `etc()`:
+
+```rust
+page.has_count("users", 3)
+    .first("users", |user| {
+        user.equals("name", "Taylor")
+            .satisfies("id", |id: u64| id > 0)
+            .missing("password")
+            .etc()
+    })
+    .contains("tags", "rust")
+    .has_count_in("tags", 1..=5)
+    .has_flash("toast.message");
+```
+
+With `pages_in("resources/js/pages")`, `component` also asserts that the component has a page file, such as `Users/Index.tsx`.
+
+A page can reload itself as the Inertia client does. The reload is an Inertia visit to the page's URL, and it sends the page's component and asset version. Awaiting `reload`, `reload_only`, `reload_except`, or `load_deferred_props` returns the reloaded page. Before it returns, each one asserts that the reloaded page has the same component, URL, and asset version. `reload_only` also asserts that the page has the props it asked for, and `reload_except` asserts that the page lacks the props it excluded:
+
+```rust
+page.reload_only(&["reviews"]).await.has_count("reviews", 3).missing("post");
+page.reload_except(&["head"]).await.has("post");
+page.load_deferred_props().await.has("stats");
+```
+
+A page from `from_body` can't send requests on its own. Give it a function with `reloads_with` that sends a `ReloadRequest` to your application and reads the page from the response, as `reloadable` in [`tests/axum.rs`](tests/axum.rs) does for an Axum `Router`.
+
 The core can also be tested without a web framework. Build an `Inertia` handle from a `Request` and an `ArraySession`, then resolve a render with `Response::into_page`. See [`tests/core.rs`](tests/core.rs).
 
 ## Architecture and writing an adapter
@@ -421,8 +448,12 @@ Implement the `Session` trait (`get`, `put`, `pull`) for the framework's session
 | `Inertia::location($url)` | `inertia.location(url)` |
 | `Inertia::clearHistory()` / `encryptHistory()` | `inertia.clear_history()` / `.encrypt_history(true)` |
 | `$response->assertInertia(fn ($page) => ..)` | `AssertablePage::from_body(&body)..` |
+| `$page->reloadOnly('reviews', fn ($page) => ..)` | `page.reload_only(&["reviews"]).await..` |
+| `$page->loadDeferredProps(fn ($page) => ..)` | `page.load_deferred_props().await..` |
+| `$page->has('user', fn ($user) => $user->where(..)->etc())` | `page.scope("user", \|user\| user.equals(..).etc())` |
+| `$page->where('views', fn ($views) => $views > 10)` | `page.satisfies("views", \|views: u64\| views > 10)` |
 
-Not ported yet: Inertia DevTools, `ProvidesInertiaProperties`, component name transformers, the `ensure_pages_exist` check, and Precognition.
+Not ported yet: Inertia DevTools, `ProvidesInertiaProperties`, component name transformers, the render-time `pages.ensure_pages_exist` check, and Precognition.
 
 ## Acknowledgements
 

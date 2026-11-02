@@ -43,6 +43,19 @@ fn app(config: Config) -> Router {
             "/headed",
             get(|inertia: Inertia| async move { inertia.render("Home", ()).with_header("x-page", "home") }),
         )
+        .route(
+            "/posts",
+            get(|inertia: Inertia| async move {
+                inertia.render(
+                    "Posts/Show",
+                    props! {
+                        "post" => "Hello",
+                        "reviews" => inertia::optional(|| async { ["Great"] }),
+                        "stats" => inertia::defer(|| async { 42 }),
+                    },
+                )
+            }),
+        )
         .route("/update", put(|| async { inertia::redirect("/") }))
         .route("/fragment", post(|| async { inertia::redirect("/page#section") }))
         .route("/empty", put(|| async { StatusCode::OK }))
@@ -115,6 +128,17 @@ fn get_(uri: &str) -> http::Request<Body> {
         .header("host", "localhost")
         .body(Body::empty())
         .unwrap()
+}
+
+/// A page that reloads itself through the app, as a test client would.
+fn reloadable(app: &Router, response: &TestResponse) -> AssertablePage {
+    let app = app.clone();
+    response.page().reloads_with(move |reload| {
+        let mut request = get_(reload.url());
+        request.headers_mut().extend(reload.headers().clone());
+        let app = app.clone();
+        async move { send(&app, request).await.page() }
+    })
 }
 
 #[tokio::test]
@@ -333,21 +357,28 @@ async fn a_failing_prop_is_a_server_error() {
 
 #[tokio::test]
 async fn handle_with_responds_to_a_failing_prop() {
+    let handle = std::sync::OnceLock::new();
+    let handle = &handle;
     let response = InertiaLayer::new(config())
         .handle_with(
             get_("/"),
             |request| async move {
                 let inertia = request.extensions().get::<Inertia>().cloned().unwrap();
-                let page = failing_page(inertia.clone()).into_response();
+                inertia.share("appName", "Demo");
+                handle.set(inertia.clone()).unwrap();
+                let page = failing_page(inertia).into_response();
                 assert!(inertia::axum::is_render(&page));
 
                 Ok::<_, std::convert::Infallible>(page)
             },
-            |error| {
+            async |error| {
                 let source = error.into_inner();
                 assert!(source.downcast_ref::<std::io::Error>().is_some());
 
-                (StatusCode::SERVICE_UNAVAILABLE, source.to_string()).into_response()
+                let inertia = handle.get().unwrap();
+                inertia.share("appName", "Demo");
+                let page = inertia.render("Error", props! { "message" => source.to_string() });
+                (StatusCode::SERVICE_UNAVAILABLE, page).into_response()
             },
         )
         .await
@@ -355,5 +386,40 @@ async fn handle_with_responds_to_a_failing_prop() {
 
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     let body = response.into_body().collect().await.unwrap().to_bytes();
-    assert_eq!(body, "The stats are down");
+    AssertablePage::from_body(std::str::from_utf8(&body).unwrap())
+        .component("Error")
+        .equals("message", "The stats are down")
+        .equals("appName", "Demo");
+}
+
+#[tokio::test]
+async fn pages_reload_the_props_they_ask_for() {
+    let app = app(config());
+    let page = reloadable(&app, &send(&app, get_("/posts?tab=reviews")).await);
+    page.url("/posts?tab=reviews").has("post").missing("reviews");
+
+    page.reload().await.has("post").missing("reviews");
+    page.reload_only(&["reviews"])
+        .await
+        .equals("reviews", ["Great"])
+        .missing("post")
+        .missing("auth");
+    page.reload_except(&["post"])
+        .await
+        .missing("post")
+        .equals("reviews", ["Great"])
+        .equals("auth.user", "Taylor");
+}
+
+#[tokio::test]
+async fn deferred_props_load_after_the_first_render() {
+    let app = app(config());
+    let page = reloadable(&app, &send(&app, get_("/posts")).await);
+    page.missing("stats").deferred("default", &["stats"]);
+
+    page.load_deferred_props()
+        .await
+        .equals("stats", 42)
+        .missing("post")
+        .missing("reviews");
 }

@@ -9,7 +9,10 @@ use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use futures_util::future::BoxFuture;
-use serde_json::Value;
+use serde::de::DeserializeOwned;
+use serde_json::{Map, Value};
+
+use crate::errors::ErrorBags;
 
 /// The session keys used by Inertia.
 pub mod key {
@@ -65,6 +68,75 @@ impl<S: Session> DynSession for S {
 }
 
 pub(crate) type SharedSession = Arc<dyn DynSession>;
+
+/// What one request leaves in the session for the next page render.
+#[derive(Default)]
+pub(crate) struct Handoff {
+    pub(crate) flash: Map<String, Value>,
+    pub(crate) errors: ErrorBags,
+    pub(crate) clear_history: bool,
+    pub(crate) preserve_fragment: bool,
+}
+
+impl Handoff {
+    /// Take what earlier requests left, so it's delivered to this page only.
+    pub(crate) async fn pull(session: Option<&SharedSession>) -> Self {
+        let Some(session) = session else {
+            return Self::default();
+        };
+
+        Self {
+            flash: decode(session.pull(key::FLASH).await),
+            errors: decode(session.pull(key::ERRORS).await),
+            clear_history: decode(session.pull(key::CLEAR_HISTORY).await),
+            preserve_fragment: decode(session.pull(key::PRESERVE_FRAGMENT).await),
+        }
+    }
+
+    /// Add a later handoff's data, whose flash data wins on conflicts.
+    pub(crate) fn merge(&mut self, later: Self) {
+        self.flash.extend(later.flash);
+        self.errors.merge(later.errors);
+        self.clear_history |= later.clear_history;
+        self.preserve_fragment |= later.preserve_fragment;
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.flash.is_empty() && self.errors.is_empty() && !self.clear_history && !self.preserve_fragment
+    }
+
+    /// Store the data on top of what earlier requests left.
+    pub(crate) async fn save(self, session: &SharedSession) {
+        if !self.flash.is_empty() {
+            let mut flash: Map<String, Value> = decode(session.get(key::FLASH).await);
+            flash.extend(self.flash);
+            session.put(key::FLASH, Value::Object(flash)).await;
+        }
+
+        if !self.errors.is_empty() {
+            let mut errors: ErrorBags = decode(session.get(key::ERRORS).await);
+            errors.merge(self.errors);
+            session
+                .put(key::ERRORS, serde_json::to_value(errors).unwrap_or_default())
+                .await;
+        }
+
+        if self.clear_history {
+            session.put(key::CLEAR_HISTORY, Value::Bool(true)).await;
+        }
+
+        if self.preserve_fragment {
+            session.put(key::PRESERVE_FRAGMENT, Value::Bool(true)).await;
+        }
+    }
+}
+
+/// A stored value, or the default when it's missing or no longer decodes.
+fn decode<T: DeserializeOwned + Default>(value: Option<Value>) -> T {
+    value
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_default()
+}
 
 /// An in-memory session. Clones share their data.
 ///

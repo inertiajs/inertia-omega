@@ -302,6 +302,20 @@ async fn unrescued_failures_fail_the_render() {
     );
 
     assert_eq!(response.into_page().await.unwrap_err().to_string(), "boom");
+
+    for broken in [
+        inertia::lazy(async || Err::<u8, _>(std::io::Error::other("disk"))),
+        inertia::try_lazy(async || Err::<u8, _>(std::io::Error::other("disk"))),
+    ] {
+        let error = visit(&[])
+            .render("Users", props! { broken => broken })
+            .into_page()
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.type_name(), std::any::type_name::<std::io::Error>());
+        assert!(error.into_inner().is::<std::io::Error>());
+    }
 }
 
 #[tokio::test]
@@ -469,6 +483,37 @@ async fn flash_data_and_errors_are_delivered_to_the_next_render() {
     assert_eq!(page.props["errors"], json!({}));
     assert!(page.flash.is_empty());
     assert!(!page.clear_history);
+}
+
+#[tokio::test]
+async fn a_failed_render_leaves_flash_data_and_errors_for_the_next_one() {
+    let session = ArraySession::new();
+    let post = Inertia::with_session(config(), request(Method::POST, &[]), session.clone());
+    post.flash("message", "Saved!")
+        .with_errors(ValidationErrors::new().with("name", "Required."));
+    post.commit().await;
+
+    let get = || Inertia::with_session(config(), request(Method::GET, &[]), session.clone());
+    let failing = props! { "stats" => inertia::try_lazy(async || Err::<u32, _>("the database is down")) };
+
+    let inertia = get();
+    inertia.encrypt_history(true).flash("toast", "Hi");
+    assert!(inertia.render("Users", failing).into_page().await.is_err());
+
+    let error_page = resolve(inertia.render("Error", ())).await;
+    assert_eq!(error_page.flash["message"], "Saved!");
+    assert_eq!(error_page.flash["toast"], "Hi");
+    assert_eq!(error_page.props["errors"], json!({ "name": "Required." }));
+    assert!(error_page.encrypt_history);
+
+    let inertia = get();
+    inertia.flash("toast", "Hi");
+    let failing = props! { "stats" => inertia::try_lazy(async || Err::<u32, _>("the database is down")) };
+    assert!(inertia.render("Users", failing).into_page().await.is_err());
+    inertia.commit().await;
+
+    let next = resolve(get().render("Users", ())).await;
+    assert_eq!(next.flash["toast"], "Hi");
 }
 
 #[tokio::test]

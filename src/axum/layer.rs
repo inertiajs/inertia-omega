@@ -66,7 +66,7 @@ impl InertiaLayer {
         F: FnOnce(http::Request<Body>) -> Fut,
         Fut: Future<Output = Result<Response, E>>,
     {
-        self.handle_with(request, next, |error| {
+        self.handle_with(request, next, async |error| {
             tracing::error!(%error, "failed to resolve Inertia props");
             server_error()
         })
@@ -76,17 +76,20 @@ impl InertiaLayer {
     /// Run Inertia around `next`, as [`handle`](Self::handle) does, but
     /// respond to a prop's failure with `failed`, for a framework to render
     /// it as it renders any error. Its response may be a page render, such
-    /// as an error page; should that fail too, it's logged, and the
-    /// response is a `500`.
-    pub async fn handle_with<F, Fut, E>(
+    /// as an error page, which can share props again first: the failed
+    /// render used up the props shared before it. Should that render fail
+    /// too, it's logged, and the response is a `500`.
+    pub async fn handle_with<F, Fut, H, HFut, E>(
         &self,
         request: http::Request<Body>,
         next: F,
-        failed: impl FnOnce(PropError) -> Response,
+        failed: H,
     ) -> Result<Response, E>
     where
         F: FnOnce(http::Request<Body>) -> Fut,
         Fut: Future<Output = Result<Response, E>>,
+        H: FnOnce(PropError) -> HFut,
+        HFut: Future<Output = Response>,
     {
         let (mut parts, body) = request.into_parts();
 
@@ -107,7 +110,7 @@ impl InertiaLayer {
         let response = next(http::Request::from_parts(parts, body)).await?;
         let response = match render(response).await {
             Ok(response) => response,
-            Err(error) => render(failed(error)).await.unwrap_or_else(|error| {
+            Err(error) => render(failed(error).await).await.unwrap_or_else(|error| {
                 tracing::error!(%error, "failed to resolve the Inertia props of a failure's response");
                 server_error()
             }),
