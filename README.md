@@ -168,6 +168,7 @@ The functions at the crate root create props with special behavior, which builde
 | `inertia::merge(value)` | Appended to its client-side value. `.prepend()`, `.append_at("data")`, `.prepend_at("data")`, `.match_on("id")`. |
 | `inertia::deep_merge(value)` | Deep merged with its client-side value. |
 | `inertia::once(..)` | Resolved once and remembered by the client. `.once_as("key")`, `.until(duration)`, `.fresh()`. |
+| `inertia::live(value, listeners)` | Reloaded when the client receives a broadcast event. `.live(listeners)` makes any other prop live, and `.throttle(duration)` limits how often it reloads. |
 | `inertia::scroll(paginator)` | An infinite scroll page, for `<InfiniteScroll>`. `inertia::scroll_with(async \|\| { .. })` loads it lazily. |
 | `inertia::try_lazy(..)` | Like `lazy`, for a callback whose `Result` has an error type that is itself `Serialize`, such as `String`. |
 
@@ -189,6 +190,31 @@ For infinite scroll, `Paginator` paginates a collection and describes its pages;
 users => inertia::scroll_with(async move || {
     Paginator::from_items(db.users().await, 15, page)
 }),
+```
+
+### Live props
+
+A live prop reloads when the client receives one of its broadcast events. Each `LiveListener` names a channel and the events broadcast on it:
+
+```rust
+use inertia::{LiveChannel, LiveListener};
+
+let listeners = vec![LiveListener::new(LiveChannel::private("orders.1"), ["OrderUpdated"])];
+
+props! {
+    order => inertia::lazy(async move || load_order(id).await).live(listeners),
+    metrics => inertia::defer(async || load_metrics().await)
+        .live([LiveListener::new(LiveChannel::public("metrics"), ["MetricsUpdated"])])
+        .throttle(Duration::from_secs(5)),
+}
+```
+
+A channel is `public`, `private`, `presence` or `encrypted_private`. Give its name without the `private-` or `presence-` prefix. The page lists a prop's listeners even when it leaves the prop out, as with deferred props, so the client knows what to listen for. A live prop can't merge, and it must listen for at least one event. Otherwise the response fails.
+
+An event can carry new prop values, so the client applies them without a reload. `inertia::broadcast_props` adds them to the event's payload:
+
+```rust
+let payload = inertia::broadcast_props(json!({ "order_id": order.id }), json!({ "order": order }))?;
 ```
 
 ## Shared data
@@ -440,6 +466,8 @@ Implement the `Session` trait (`get`, `put`, `pull`) for the framework's session
 | `Inertia::merge(..)->matchOn('id')` | `inertia::merge(..).match_on("id")` |
 | `Inertia::deepMerge(..)` / `Inertia::always(..)` | `inertia::deep_merge(..)` / `inertia::always(..)` |
 | `Inertia::once(fn () => ..)->until(..)` | `inertia::once(async \|\| { .. }).until(..)` |
+| `Inertia::live(fn () => .., on: new OrderUpdated($order))` | `inertia::live(inertia::lazy(..), [LiveListener::new(LiveChannel::private("orders.1"), ["OrderUpdated"])])` |
+| `Inertia::broadcastProps([...])` | `inertia::broadcast_props(payload, props)` |
 | `Inertia::scroll(User::paginate())` | `inertia::scroll(Paginator::from_items(..))` |
 | `HandleInertiaRequests::share()` | `Config::share` or `inertia.share(..)` in a middleware |
 | `HandleInertiaRequests::version()` | `Config::version` / `Config::version_with` |
