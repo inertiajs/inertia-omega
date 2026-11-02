@@ -341,7 +341,7 @@ AssertablePage::from_body(&body)
     .flash("toast", "Saved!");
 ```
 
-To assert on a nested object or list, scope into it with `scope`, `first` or `each`. A scope fails when the closure leaves one of its props unchecked, unless the closure calls `etc()`:
+To assert on a nested object or list, scope into it with `scope`, `first`, or `each`. A scope fails if its closure doesn't assert on every prop in the scoped value, unless the closure calls `etc()`:
 
 ```rust
 page.has_count("users", 3)
@@ -358,7 +358,7 @@ page.has_count("users", 3)
 
 With `pages_in("resources/js/pages")`, `component` also asserts that the component has a page file, such as `Users/Index.tsx`.
 
-A page can reload itself as the Inertia client does, with an Inertia visit to its URL that sends its component and asset version. `reload`, `reload_only` and `reload_except` return a future of the reloaded page, after asserting that it has the same component, URL and asset version, and that it has the `only` props and lacks the `except` props:
+A page can reload itself as the Inertia client does. The reload is an Inertia visit to the page's URL, and it sends the page's component and asset version. Awaiting `reload`, `reload_only`, `reload_except`, or `load_deferred_props` returns the reloaded page. Before it returns, each one asserts that the reloaded page has the same component, URL, and asset version. `reload_only` also asserts that the page has the props it asked for, and `reload_except` asserts that the page lacks the props it excluded:
 
 ```rust
 page.reload_only(&["reviews"]).await.has_count("reviews", 3).missing("post");

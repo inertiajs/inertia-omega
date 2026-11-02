@@ -12,7 +12,7 @@
 //!     .missing("password");
 //! ```
 //!
-//! A page read by an adapter that knows how to send requests can also
+//! When an adapter gives a page a way to send requests, the page can also
 //! [`reload`](AssertablePage::reload) itself, as the Inertia client does.
 
 use std::collections::BTreeSet;
@@ -90,7 +90,7 @@ impl AssertablePage {
 
     /// Check that each [`component`](Self::component) the test asserts has a
     /// page file in the given directory, such as `Users/Show.tsx` for
-    /// `Users/Show`, with the extension `js`, `jsx`, `svelte`, `ts`, `tsx`
+    /// `Users/Show`, with the extension `js`, `jsx`, `svelte`, `ts`, `tsx`,
     /// or `vue`. Adapters call this with the application's pages directory.
     #[must_use]
     pub fn pages_in(mut self, directory: impl Into<PathBuf>) -> Self {
@@ -332,8 +332,8 @@ impl AssertablePage {
     /// });
     /// ```
     ///
-    /// Scoped assertions such as [`component`](Self::component) and
-    /// [`reload`](Self::reload) still apply to the whole page.
+    /// Inside a scope, page assertions such as [`component`](Self::component)
+    /// and [`reload`](Self::reload) still apply to the whole page.
     #[track_caller]
     pub fn scope(&self, path: &str, assertions: impl for<'a> FnOnce(&'a Self) -> &'a Self) -> &Self {
         self.assert_scoped(path, assertions);
@@ -512,8 +512,8 @@ impl AssertablePage {
     }
 
     /// Reload the page with an Inertia visit to its URL, then assert that the
-    /// reloaded page has the same component, URL and asset version. Await it
-    /// for the reloaded page.
+    /// reloaded page has the same component, URL, and asset version. Awaiting
+    /// the future returns the reloaded page.
     ///
     /// ```no_run
     /// # async fn test(page: inertia::testing::AssertablePage) {
@@ -523,7 +523,7 @@ impl AssertablePage {
     ///
     /// # Panics
     ///
-    /// Panics when the page wasn't read by an adapter that can
+    /// Panics when no adapter gave the page a way to
     /// [send reloads](Self::reloads_with). The future panics when the
     /// reloaded page differs.
     #[track_caller]
@@ -532,8 +532,8 @@ impl AssertablePage {
     }
 
     /// Reload only the given props with a partial reload, then assert that the
-    /// reloaded page has them, and the same component, URL and asset version.
-    /// Await it for the reloaded page.
+    /// reloaded page has them and has the same component, URL, and asset
+    /// version. Awaiting the future returns the reloaded page.
     ///
     /// ```no_run
     /// # async fn test(page: inertia::testing::AssertablePage) {
@@ -543,17 +543,17 @@ impl AssertablePage {
     ///
     /// # Panics
     ///
-    /// Panics when the page wasn't read by an adapter that can
+    /// Panics when no adapter gave the page a way to
     /// [send reloads](Self::reloads_with). The future panics when the
-    /// reloaded page differs or misses one of the props.
+    /// reloaded page differs or lacks one of the props.
     #[track_caller]
     pub fn reload_only(&self, props: &[&str]) -> impl Future<Output = Self> + Send + use<> {
         self.send_reload(ReloadedProps::Only(props.iter().map(|&prop| prop.to_owned()).collect()))
     }
 
     /// Reload every prop except the given ones with a partial reload, then
-    /// assert that the reloaded page doesn't have them, and has the same
-    /// component, URL and asset version. Await it for the reloaded page.
+    /// assert that the reloaded page lacks them and has the same component,
+    /// URL, and asset version. Awaiting the future returns the reloaded page.
     ///
     /// ```no_run
     /// # async fn test(page: inertia::testing::AssertablePage) {
@@ -563,7 +563,7 @@ impl AssertablePage {
     ///
     /// # Panics
     ///
-    /// Panics when the page wasn't read by an adapter that can
+    /// Panics when no adapter gave the page a way to
     /// [send reloads](Self::reloads_with). The future panics when the
     /// reloaded page differs or has one of the props.
     #[track_caller]
@@ -575,7 +575,7 @@ impl AssertablePage {
 
     /// Load every deferred prop with a partial reload, as the Inertia client
     /// does after the first render, then assert that the reloaded page has
-    /// them. Await it for the reloaded page.
+    /// them. Awaiting the future returns the reloaded page.
     ///
     /// ```no_run
     /// # async fn test(page: inertia::testing::AssertablePage) {
