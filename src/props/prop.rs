@@ -5,7 +5,11 @@ use futures_util::future::BoxFuture;
 use serde::Serialize;
 use serde_json::Value;
 
+use jiff::tz::TimeZone;
+use jiff::{Timestamp, ZonedArithmetic};
+
 use super::{PropError, Props, ScrollMetadata};
+use crate::page::{LiveListener, LiveState};
 
 /// A single page prop.
 ///
@@ -55,6 +59,7 @@ pub(crate) struct Options {
     pub(crate) merge: Option<Merge>,
     pub(crate) once: Option<Once>,
     pub(crate) scroll: Option<Scroll>,
+    pub(crate) live: Option<LiveState>,
 }
 
 /// When a prop is sent to the client.
@@ -228,9 +233,17 @@ impl Prop {
         self
     }
 
-    /// Have the client forget the once prop after the given duration.
-    pub fn until(mut self, ttl: Duration) -> Self {
-        self.once_options().ttl = Some(ttl);
+    /// Have the client forget the once prop after the given length of
+    /// time, such as `7.days()` or a `std::time::Duration`. Calendar units
+    /// count from now, in UTC.
+    ///
+    /// ```
+    /// use jiff::ToSpan;
+    ///
+    /// let plans = inertia::once(async || ["basic", "pro"]).until(7.days());
+    /// ```
+    pub fn until(mut self, ttl: impl Into<ZonedArithmetic>) -> Self {
+        self.once_options().ttl = Some(exact_duration(ttl));
         self
     }
 
@@ -244,6 +257,53 @@ impl Prop {
         self.options.once.get_or_insert_with(Once::default)
     }
 
+    /// Refresh the prop with a partial reload whenever the client receives
+    /// one of the listeners' broadcast events. Calling it again adds more
+    /// listeners. A live prop can't also merge.
+    ///
+    /// ```
+    /// use inertia::{LiveChannel, LiveListener};
+    ///
+    /// let order = inertia::lazy(async || "shipped")
+    ///     .live([LiveListener::new(LiveChannel::private("orders.1"), ["OrderUpdated"])]);
+    /// ```
+    pub fn live(mut self, listeners: impl IntoIterator<Item = LiveListener>) -> Self {
+        let live = self.live_options();
+
+        for LiveListener { channel, events } in listeners {
+            for event in events {
+                match live.listeners.iter_mut().find(|listener| listener.channel == channel) {
+                    Some(listener) if listener.events.contains(&event) => {}
+                    Some(listener) => listener.events.push(event),
+                    None => live.listeners.push(LiveListener::new(channel.clone(), [event])),
+                }
+            }
+        }
+
+        self
+    }
+
+    /// Refresh the live prop at most once per the given length of time,
+    /// such as `5.seconds()` or a `std::time::Duration`.
+    ///
+    /// ```
+    /// use inertia::{LiveChannel, LiveListener};
+    /// use jiff::ToSpan;
+    ///
+    /// let metrics = inertia::defer(async || 42)
+    ///     .live([LiveListener::new(LiveChannel::public("metrics"), ["MetricsUpdated"])])
+    ///     .throttle(5.seconds());
+    /// ```
+    pub fn throttle(mut self, throttle: impl Into<ZonedArithmetic>) -> Self {
+        let throttle = exact_duration(throttle);
+        self.live_options().throttle = Some(u64::try_from(throttle.as_millis()).unwrap_or(u64::MAX));
+        self
+    }
+
+    fn live_options(&mut self) -> &mut LiveState {
+        self.options.live.get_or_insert_with(LiveState::default)
+    }
+
     /// Set the key holding the items of an infinite scroll prop (`data` by default).
     pub fn wrapper(mut self, wrapper: impl Into<String>) -> Self {
         if let Some(scroll) = &mut self.options.scroll {
@@ -251,6 +311,17 @@ impl Prop {
         }
         self
     }
+}
+
+/// The exact length of a span from now, in UTC: zero when it's negative, and
+/// the longest `Duration` when it ends past the last representable time.
+fn exact_duration(span: impl Into<ZonedArithmetic>) -> Duration {
+    let now = Timestamp::now().to_zoned(TimeZone::UTC);
+    let Ok(later) = now.checked_add(span) else {
+        return Duration::MAX;
+    };
+
+    Duration::try_from(later.timestamp().duration_since(now.timestamp())).unwrap_or(Duration::ZERO)
 }
 
 impl fmt::Debug for Source {

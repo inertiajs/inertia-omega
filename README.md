@@ -167,7 +167,8 @@ The functions at the crate root create props with special behavior, which builde
 | `inertia::always(value)` | Sent with every response, even partial reloads that didn't ask for it. |
 | `inertia::merge(value)` | Appended to its client-side value. `.prepend()`, `.append_at("data")`, `.prepend_at("data")`, `.match_on("id")`. |
 | `inertia::deep_merge(value)` | Deep merged with its client-side value. |
-| `inertia::once(..)` | Resolved once and remembered by the client. `.once_as("key")`, `.until(duration)`, `.fresh()`. |
+| `inertia::once(..)` | Resolved once and remembered by the client. `.once_as("key")`, `.until(1.hour())`, `.fresh()`. |
+| `inertia::live(value, listeners)` | Reloaded when the client receives a broadcast event. `.live(listeners)` makes any other prop live, and `.throttle(5.seconds())` limits how often it reloads. |
 | `inertia::scroll(paginator)` | An infinite scroll page, for `<InfiniteScroll>`. `inertia::scroll_with(async \|\| { .. })` loads it lazily. |
 | `inertia::try_lazy(..)` | Like `lazy`, for a callback whose `Result` has an error type that is itself `Serialize`, such as `String`. |
 
@@ -176,10 +177,12 @@ The behaviors compose:
 ```rust
 props! {
     posts => inertia::defer(async || load_posts().await).group("feed").merge().match_on("id"),
-    plans => inertia::once(async || load_plans().await).until(Duration::from_secs(3600)),
+    plans => inertia::once(async || load_plans().await).until(1.hour()),
     stats => inertia::defer(async || stats_api().await).rescue(),
 }
 ```
+
+`until` and `throttle` take a length of time, such as `1.hour()` with `jiff::ToSpan` in scope, or a `std::time::Duration`. Calendar units, such as `1.month()`, count from now in UTC.
 
 A callback may return a `Result`. Its error fails the response, unless the prop is `.rescue()`d, which tells the client that the prop failed. A callback runs after the handler returns, so it owns what it uses: move values into it with `async move`, such as a database pool or an ID. **Sibling callbacks run concurrently**, so independent lookups can overlap rather than run one after another.
 
@@ -189,6 +192,31 @@ For infinite scroll, `Paginator` paginates a collection and describes its pages;
 users => inertia::scroll_with(async move || {
     Paginator::from_items(db.users().await, 15, page)
 }),
+```
+
+### Live props
+
+A live prop reloads when the client receives one of its broadcast events. Each `LiveListener` names a channel and the events broadcast on it:
+
+```rust
+use inertia::{LiveChannel, LiveListener};
+
+let listeners = vec![LiveListener::new(LiveChannel::private("orders.1"), ["OrderUpdated"])];
+
+props! {
+    order => inertia::lazy(async move || load_order(id).await).live(listeners),
+    metrics => inertia::defer(async || load_metrics().await)
+        .live([LiveListener::new(LiveChannel::public("metrics"), ["MetricsUpdated"])])
+        .throttle(5.seconds()),
+}
+```
+
+A channel is `public`, `private`, `presence` or `encrypted_private`. Give its name without the `private-` or `presence-` prefix. The page lists a prop's listeners even when it leaves the prop out, as with deferred props, so the client knows what to listen for. A live prop can't merge, and it must listen for at least one event. Otherwise the response fails.
+
+An event can carry new prop values, so the client applies them without a reload. `inertia::broadcast_props` adds them to the event's payload:
+
+```rust
+let payload = inertia::broadcast_props(json!({ "order_id": order.id }), json!({ "order": order }))?;
 ```
 
 ## Shared data
@@ -440,6 +468,8 @@ Implement the `Session` trait (`get`, `put`, `pull`) for the framework's session
 | `Inertia::merge(..)->matchOn('id')` | `inertia::merge(..).match_on("id")` |
 | `Inertia::deepMerge(..)` / `Inertia::always(..)` | `inertia::deep_merge(..)` / `inertia::always(..)` |
 | `Inertia::once(fn () => ..)->until(..)` | `inertia::once(async \|\| { .. }).until(..)` |
+| `Inertia::live(fn () => .., on: new OrderUpdated($order))` | `inertia::live(inertia::lazy(..), [LiveListener::new(LiveChannel::private("orders.1"), ["OrderUpdated"])])` |
+| `Inertia::broadcastProps([...])` | `inertia::broadcast_props(payload, props)` |
 | `Inertia::scroll(User::paginate())` | `inertia::scroll(Paginator::from_items(..))` |
 | `HandleInertiaRequests::share()` | `Config::share` or `inertia.share(..)` in a middleware |
 | `HandleInertiaRequests::version()` | `Config::version` / `Config::version_with` |
