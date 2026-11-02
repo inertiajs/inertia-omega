@@ -365,6 +365,45 @@ pub fn live(value: impl IntoProp, listeners: impl IntoIterator<Item = LiveListen
     value.into_prop().live(listeners)
 }
 
+/// Add props to a broadcast event's payload, so the client applies them to
+/// the live props they name without reloading them.
+///
+/// The props are sent under `__inertia.props`. Their keys are kept as
+/// written; dot notation doesn't nest them.
+///
+/// ```
+/// use serde_json::json;
+///
+/// let payload = inertia::broadcast_props(json!({ "order_id": 1 }), json!({ "order": "shipped" }))?;
+///
+/// assert_eq!(payload, json!({ "order_id": 1, "__inertia": { "props": { "order": "shipped" } } }));
+/// # Ok::<(), inertia::PropError>(())
+/// ```
+///
+/// # Errors
+///
+/// Fails when the payload isn't a JSON object, or the props don't serialize
+/// to one.
+pub fn broadcast_props(payload: Value, props: impl Serialize) -> Result<Value, PropError> {
+    let Value::Object(mut payload) = payload else {
+        return Err(PropError::new(format!(
+            "a broadcast payload must be a JSON object, not `{payload}`"
+        )));
+    };
+
+    let props = serde_json::to_value(props)?;
+
+    if !props.is_object() {
+        return Err(PropError::new(format!(
+            "broadcast props must serialize to a JSON object, not `{props}`"
+        )));
+    }
+
+    payload.insert("__inertia".to_owned(), serde_json::json!({ "props": props }));
+
+    Ok(Value::Object(payload))
+}
+
 /// A prop that is appended to its client-side value instead of replacing it.
 pub fn merge(value: impl IntoProp) -> Prop {
     value.into_prop().merge()

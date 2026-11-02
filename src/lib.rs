@@ -63,8 +63,8 @@ pub use crate::inertia::Inertia;
 pub use crate::json::{encode_big_integers, html_safe_json};
 pub use crate::page::{ChannelType, LiveChannel, LiveListener, LiveState, Metadata, OnceState, Page, ScrollState};
 pub use crate::props::{
-    IntoProp, IntoProps, Paginator, Prop, PropError, Props, ProvidesScrollMetadata, ScrollMetadata, always, deep_merge,
-    defer, lazy, live, merge, once, optional, scroll, scroll_with, try_lazy,
+    IntoProp, IntoProps, Paginator, Prop, PropError, Props, ProvidesScrollMetadata, ScrollMetadata, always,
+    broadcast_props, deep_merge, defer, lazy, live, merge, once, optional, scroll, scroll_with, try_lazy,
 };
 pub use crate::protocol::redirect;
 pub use crate::request::Request;

@@ -951,3 +951,32 @@ async fn live_props_that_merge_or_listen_for_nothing_fail_the_render() {
         assert!(error.to_string().contains(message), "{error}");
     }
 }
+
+#[test]
+fn broadcast_props_wrap_the_props_in_the_payload() {
+    let payload = inertia::broadcast_props(
+        json!({ "order_id": 1 }),
+        json!({ "order": { "status": "shipped" }, "order.total": 100 }),
+    )
+    .unwrap();
+
+    assert_eq!(
+        payload,
+        json!({
+            "order_id": 1,
+            "__inertia": { "props": { "order": { "status": "shipped" }, "order.total": 100 } },
+        })
+    );
+}
+
+#[test]
+fn broadcast_props_need_json_objects() {
+    let error = inertia::broadcast_props(json!([1]), json!({ "order": 1 })).unwrap_err();
+    assert!(error.to_string().contains("payload must be a JSON object"), "{error}");
+
+    let error = inertia::broadcast_props(json!({}), "order").unwrap_err();
+    assert!(
+        error.to_string().contains("props must serialize to a JSON object"),
+        "{error}"
+    );
+}
