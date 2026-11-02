@@ -22,7 +22,7 @@ async fn main() {
 </head>
 <body>{body}</body>
 </html>"#,
-            head = view.head,
+            head = view.head.join("\n"),
             body = view.body,
         )
     });

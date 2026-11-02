@@ -69,7 +69,7 @@ async fn main() {
 </head>
 <body>{body}</body>
 </html>"#,
-                head = view.head,
+                head = view.head.join("\n"),
                 body = view.body,
             )
         });
@@ -276,7 +276,7 @@ inertia.clear_history();                                  // e.g. on logout: enc
 
 The root view renders the HTML document of a first visit. It is any `Fn(&View) -> String`, or a type implementing `RootView`. A `View` holds:
 
-- `head`: the SSR `<head>` tags,
+- `head`: the SSR `<head>` elements, one string per element,
 - `body`: the page data `<script>` and the app element,
 - `page`: the page object,
 - `data`: view data,
@@ -301,7 +301,7 @@ Config::new()
         "<!DOCTYPE html><html><head>{refresh}{assets}{head}</head><body>{body}</body></html>",
         refresh = vite.react_refresh(),
         assets = vite.tags(["resources/js/app.tsx", &format!("resources/js/pages/{}.tsx", view.page.component)]),
-        head = view.head,
+        head = view.head.join("\n"),
         body = view.body,
     ))
 ```
