@@ -294,7 +294,7 @@ async fn document(inertia: &Inertia, page: &Page, data: &Map<String, Value>, ssr
 
     let ssr = rendered.is_some();
     let Rendered { head, body } = rendered.unwrap_or_else(|| Rendered {
-        head: String::new(),
+        head: Vec::new(),
         body: format!(
             r#"<script data-page="{id}" type="application/json">{json}</script><div id="{id}"></div>"#,
             id = config.root_id,

@@ -12,7 +12,7 @@ use crate::page::Page;
 /// let root_view = |view: &inertia::View<'_>| {
 ///     format!(
 ///         "<!DOCTYPE html><html><head>{head}</head><body>{body}</body></html>",
-///         head = view.head,
+///         head = view.head.join("\n"),
 ///         body = view.body,
 ///     )
 /// };
@@ -38,8 +38,8 @@ where
 pub struct View<'a> {
     /// The page object.
     pub page: &'a Page,
-    /// The `<head>` elements rendered by SSR, or an empty string.
-    pub head: &'a str,
+    /// The `<head>` elements rendered by SSR, one per entry, or none.
+    pub head: &'a [String],
     /// The app: the page data `<script>` and the element the app mounts in,
     /// server-side rendered when SSR is enabled.
     pub body: &'a str,
@@ -58,7 +58,7 @@ pub(crate) fn default_root_view(view: &View<'_>) -> String {
             "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n",
             "{head}\n</head>\n<body>\n{body}\n</body>\n</html>\n",
         ),
-        head = view.head,
+        head = view.head.join("\n"),
         body = view.body,
     )
 }

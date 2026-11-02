@@ -20,8 +20,8 @@ use crate::request::Request;
 /// Server-side rendered HTML for a page.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Rendered {
-    /// The `<head>` elements, such as the `<title>` set with `<Head>`.
-    pub head: String,
+    /// The `<head>` elements, one per entry, such as the `<title>` set with `<Head>`.
+    pub head: Vec<String>,
     /// The app element with its rendered HTML, and the page data `<script>`.
     pub body: String,
 }
@@ -216,10 +216,7 @@ impl Gateway for HttpGateway {
 
         // The Vite plugin responds with `null` while it warms up...
         match response.json::<Option<Response>>().await {
-            Ok(rendered) => rendered.map(|Response { head, body }| Rendered {
-                head: head.join("\n"),
-                body,
-            }),
+            Ok(rendered) => rendered.map(|Response { head, body }| Rendered { head, body }),
             Err(error) => {
                 tracing::error!(%url, %error, "invalid Inertia SSR response; rendering on the client");
                 None

@@ -20,7 +20,7 @@ type ResolveUrl = dyn Fn(&Request) -> String + Send + Sync;
 ///     .version("1")
 ///     .share(|_request| props! { appName => "Ferris" })
 ///     .root_view(|view: &inertia::View<'_>| {
-///         format!("<!DOCTYPE html><html><head>{}</head><body>{}</body></html>", view.head, view.body)
+///         format!("<!DOCTYPE html><html><head>{}</head><body>{}</body></html>", view.head.join("\n"), view.body)
 ///     });
 /// ```
 #[derive(Clone)]
