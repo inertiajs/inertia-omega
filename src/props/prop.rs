@@ -5,6 +5,9 @@ use futures_util::future::BoxFuture;
 use serde::Serialize;
 use serde_json::Value;
 
+use jiff::tz::TimeZone;
+use jiff::{Timestamp, ZonedArithmetic};
+
 use super::{PropError, Props, ScrollMetadata};
 use crate::page::{LiveListener, LiveState};
 
@@ -230,9 +233,17 @@ impl Prop {
         self
     }
 
-    /// Have the client forget the once prop after the given duration.
-    pub fn until(mut self, ttl: Duration) -> Self {
-        self.once_options().ttl = Some(ttl);
+    /// Have the client forget the once prop after the given length of
+    /// time, such as `7.days()` or a `std::time::Duration`. Calendar units
+    /// count from now, in UTC.
+    ///
+    /// ```
+    /// use jiff::ToSpan;
+    ///
+    /// let plans = inertia::once(async || ["basic", "pro"]).until(7.days());
+    /// ```
+    pub fn until(mut self, ttl: impl Into<ZonedArithmetic>) -> Self {
+        self.once_options().ttl = Some(exact_duration(ttl));
         self
     }
 
@@ -272,8 +283,19 @@ impl Prop {
         self
     }
 
-    /// Refresh the live prop at most once per the given duration.
-    pub fn throttle(mut self, throttle: Duration) -> Self {
+    /// Refresh the live prop at most once per the given length of time,
+    /// such as `5.seconds()` or a `std::time::Duration`.
+    ///
+    /// ```
+    /// use inertia::{LiveChannel, LiveListener};
+    /// use jiff::ToSpan;
+    ///
+    /// let metrics = inertia::defer(async || 42)
+    ///     .live([LiveListener::new(LiveChannel::public("metrics"), ["MetricsUpdated"])])
+    ///     .throttle(5.seconds());
+    /// ```
+    pub fn throttle(mut self, throttle: impl Into<ZonedArithmetic>) -> Self {
+        let throttle = exact_duration(throttle);
         self.live_options().throttle = Some(u64::try_from(throttle.as_millis()).unwrap_or(u64::MAX));
         self
     }
@@ -289,6 +311,17 @@ impl Prop {
         }
         self
     }
+}
+
+/// The exact length of a span from now, in UTC: zero when it's negative, and
+/// the longest `Duration` when it ends past the last representable time.
+fn exact_duration(span: impl Into<ZonedArithmetic>) -> Duration {
+    let now = Timestamp::now().to_zoned(TimeZone::UTC);
+    let Ok(later) = now.checked_add(span) else {
+        return Duration::MAX;
+    };
+
+    Duration::try_from(later.timestamp().duration_since(now.timestamp())).unwrap_or(Duration::ZERO)
 }
 
 impl fmt::Debug for Source {

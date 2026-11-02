@@ -368,7 +368,7 @@ impl<'a> PropsResolver<'a> {
         let expires_at = once.ttl.map(|ttl| {
             let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
 
-            (now.as_secs() + ttl.as_secs()) * 1000
+            now.as_secs().saturating_add(ttl.as_secs()).saturating_mul(1000)
         });
 
         self.metadata.once_props.insert(

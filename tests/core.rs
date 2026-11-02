@@ -980,3 +980,31 @@ fn broadcast_props_need_json_objects() {
         "{error}"
     );
 }
+
+#[tokio::test]
+async fn once_and_live_props_take_spans() {
+    use jiff::ToSpan;
+
+    let secs = || {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    };
+    let before = secs();
+    let page = resolve(visit(&[]).render(
+        "Users",
+        props! {
+            plans => inertia::once(async || 1).until(1.day()),
+            countries => inertia::once(async || 2).until(1.month()),
+            metrics => inertia::live(3, order_listeners()).throttle(5.seconds()),
+        },
+    ))
+    .await;
+    let after = secs();
+
+    let expires_at = |prop: &str| page.metadata.once_props[prop].expires_at.unwrap() / 1000;
+    assert!((before + 86_400..=after + 86_400).contains(&expires_at("plans")));
+    assert!((before + 28 * 86_400..=after + 31 * 86_400).contains(&expires_at("countries")));
+    assert_eq!(page.metadata.live_props["metrics"].throttle, Some(5000));
+}

@@ -167,8 +167,8 @@ The functions at the crate root create props with special behavior, which builde
 | `inertia::always(value)` | Sent with every response, even partial reloads that didn't ask for it. |
 | `inertia::merge(value)` | Appended to its client-side value. `.prepend()`, `.append_at("data")`, `.prepend_at("data")`, `.match_on("id")`. |
 | `inertia::deep_merge(value)` | Deep merged with its client-side value. |
-| `inertia::once(..)` | Resolved once and remembered by the client. `.once_as("key")`, `.until(duration)`, `.fresh()`. |
-| `inertia::live(value, listeners)` | Reloaded when the client receives a broadcast event. `.live(listeners)` makes any other prop live, and `.throttle(duration)` limits how often it reloads. |
+| `inertia::once(..)` | Resolved once and remembered by the client. `.once_as("key")`, `.until(1.hour())`, `.fresh()`. |
+| `inertia::live(value, listeners)` | Reloaded when the client receives a broadcast event. `.live(listeners)` makes any other prop live, and `.throttle(5.seconds())` limits how often it reloads. |
 | `inertia::scroll(paginator)` | An infinite scroll page, for `<InfiniteScroll>`. `inertia::scroll_with(async \|\| { .. })` loads it lazily. |
 | `inertia::try_lazy(..)` | Like `lazy`, for a callback whose `Result` has an error type that is itself `Serialize`, such as `String`. |
 
@@ -177,10 +177,12 @@ The behaviors compose:
 ```rust
 props! {
     posts => inertia::defer(async || load_posts().await).group("feed").merge().match_on("id"),
-    plans => inertia::once(async || load_plans().await).until(Duration::from_secs(3600)),
+    plans => inertia::once(async || load_plans().await).until(1.hour()),
     stats => inertia::defer(async || stats_api().await).rescue(),
 }
 ```
+
+`until` and `throttle` take a length of time, such as `1.hour()` with `jiff::ToSpan` in scope, or a `std::time::Duration`. Calendar units, such as `1.month()`, count from now in UTC.
 
 A callback may return a `Result`. Its error fails the response, unless the prop is `.rescue()`d, which tells the client that the prop failed. A callback runs after the handler returns, so it owns what it uses: move values into it with `async move`, such as a database pool or an ID. **Sibling callbacks run concurrently**, so independent lookups can overlap rather than run one after another.
 
@@ -205,7 +207,7 @@ props! {
     order => inertia::lazy(async move || load_order(id).await).live(listeners),
     metrics => inertia::defer(async || load_metrics().await)
         .live([LiveListener::new(LiveChannel::public("metrics"), ["MetricsUpdated"])])
-        .throttle(Duration::from_secs(5)),
+        .throttle(5.seconds()),
 }
 ```
 
