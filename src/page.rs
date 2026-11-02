@@ -73,6 +73,9 @@ pub struct Metadata {
     /// The props the client should remember across visits.
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub once_props: IndexMap<String, OnceState>,
+    /// The broadcast events that refresh live props, by prop path.
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub live_props: IndexMap<String, LiveState>,
 }
 
 /// The pagination state of an infinite scroll prop.
@@ -93,6 +96,108 @@ pub struct OnceState {
     pub prop: String,
     /// When the client should forget the prop, in milliseconds since the epoch.
     pub expires_at: Option<u64>,
+}
+
+/// The broadcast events that refresh a live prop.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LiveState {
+    /// The listeners, at most one per channel.
+    pub listeners: Vec<LiveListener>,
+    /// The minimum time between refreshes, in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub throttle: Option<u64>,
+}
+
+/// The broadcast events on a channel that refresh a live prop.
+///
+/// ```
+/// use inertia::{LiveChannel, LiveListener};
+///
+/// let listener = LiveListener::new(LiveChannel::private("orders.1"), ["OrderUpdated", "OrderShipped"]);
+///
+/// assert_eq!(listener.events, ["OrderUpdated", "OrderShipped"]);
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LiveListener {
+    /// The channel the events are broadcast on.
+    pub channel: LiveChannel,
+    /// The names the events are broadcast as.
+    pub events: Vec<String>,
+}
+
+impl LiveListener {
+    /// Listen for the given events on a channel.
+    pub fn new(channel: LiveChannel, events: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self {
+            channel,
+            events: events.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// A broadcast channel a live prop listens on.
+///
+/// The name has no `private-` or `presence-` prefix; the client's transport
+/// derives it from the type.
+///
+/// ```
+/// use inertia::{ChannelType, LiveChannel};
+///
+/// let channel = LiveChannel::presence("chat.1");
+///
+/// assert_eq!(channel.name, "chat.1");
+/// assert_eq!(channel.kind, ChannelType::Presence);
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LiveChannel {
+    /// The channel name, without a prefix.
+    pub name: String,
+    /// Who may subscribe to the channel.
+    #[serde(rename = "type")]
+    pub kind: ChannelType,
+}
+
+impl LiveChannel {
+    /// A channel anyone may subscribe to.
+    pub fn public(name: impl Into<String>) -> Self {
+        Self::new(name, ChannelType::Public)
+    }
+
+    /// A channel only authorized users may subscribe to.
+    pub fn private(name: impl Into<String>) -> Self {
+        Self::new(name, ChannelType::Private)
+    }
+
+    /// A private channel that also shares who is subscribed.
+    pub fn presence(name: impl Into<String>) -> Self {
+        Self::new(name, ChannelType::Presence)
+    }
+
+    /// A private channel whose messages are end-to-end encrypted.
+    pub fn encrypted_private(name: impl Into<String>) -> Self {
+        Self::new(name, ChannelType::EncryptedPrivate)
+    }
+
+    fn new(name: impl Into<String>, kind: ChannelType) -> Self {
+        Self {
+            name: name.into(),
+            kind,
+        }
+    }
+}
+
+/// The type of a [`LiveChannel`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ChannelType {
+    /// Anyone may subscribe.
+    Public,
+    /// Only authorized users may subscribe.
+    Private,
+    /// Only authorized users may subscribe, and they see who else is subscribed.
+    Presence,
+    /// Only authorized users may subscribe, and messages are end-to-end encrypted.
+    EncryptedPrivate,
 }
 
 fn is_false(value: &bool) -> bool {
@@ -131,12 +236,14 @@ mod tests {
             },
         );
         page.metadata.merge_props.push("posts".into());
+        page.metadata.live_props.insert("order".into(), LiveState::default());
         page.clear_history = true;
 
         let json = serde_json::to_string(&page).unwrap();
 
         assert!(json.find("mergeProps") < json.find("onceProps"));
-        assert!(json.find("onceProps") < json.find("clearHistory"));
+        assert!(json.find("onceProps") < json.find("liveProps"));
+        assert!(json.find("liveProps") < json.find("clearHistory"));
         assert!(json.contains(r#""expiresAt":null"#));
     }
 
