@@ -186,13 +186,28 @@ props! {
 
 A callback may return a `Result`. Its error fails the response, unless the prop is `.rescue()`d, which tells the client that the prop failed. A callback runs after the handler returns, so it owns what it uses: move values into it with `async move`, such as a database pool or an ID. **Sibling callbacks run concurrently**, so independent lookups can overlap rather than run one after another.
 
-For infinite scroll, `Paginator` paginates a collection and describes its pages; implement `ProvidesScrollMetadata` for your own paginated types:
+For infinite scroll, pass a page of results that keeps its items under `data` and implements `ProvidesScrollMetadata`. Laravel's paginators implement it. For a paginated type of your own, return its `ScrollMetadata`:
 
 ```rust
-users => inertia::scroll_with(async move || {
-    Paginator::from_items(db.users().await, 15, page)
-}),
+#[derive(Serialize)]
+struct UserPage {
+    data: Vec<User>,
+    #[serde(skip)]
+    page: u64,
+    #[serde(skip)]
+    last_page: u64,
+}
+
+impl ProvidesScrollMetadata for UserPage {
+    fn scroll_metadata(&self) -> ScrollMetadata {
+        ScrollMetadata::pages("page", self.page, self.last_page)
+    }
+}
+
+users => inertia::scroll_with(async move || db.user_page(page).await),
 ```
+
+Like a lazy prop's callback, a `scroll_with` callback may return a `Result`. Its error fails the response, unless the prop is `.rescue()`d.
 
 ### Live props
 
@@ -470,7 +485,7 @@ Implement the `Session` trait (`get`, `put`, `pull`) for the framework's session
 | `Inertia::once(fn () => ..)->until(..)` | `inertia::once(async \|\| { .. }).until(..)` |
 | `Inertia::live(fn () => .., on: new OrderUpdated($order))` | `inertia::live(inertia::lazy(..), [LiveListener::new(LiveChannel::private("orders.1"), ["OrderUpdated"])])` |
 | `Inertia::broadcastProps([...])` | `inertia::broadcast_props(payload, props)` |
-| `Inertia::scroll(User::paginate())` | `inertia::scroll(Paginator::from_items(..))` |
+| `Inertia::scroll(User::paginate())` | `inertia::scroll(User::query().paginate(15).await?)` |
 | `HandleInertiaRequests::share()` | `Config::share` or `inertia.share(..)` in a middleware |
 | `HandleInertiaRequests::version()` | `Config::version` / `Config::version_with` |
 | `back()->withErrors($errors)` | `inertia.back_with_errors(errors)` |
