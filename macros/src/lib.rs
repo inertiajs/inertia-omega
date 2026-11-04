@@ -1,4 +1,4 @@
-//! The procedural macros of `inertia-omega`. Use them through the `inertia`
+//! The procedural macros of `inertia-laravel-rust`. Use them through the `inertia`
 //! crate, as `inertia::props!`.
 
 use proc_macro::TokenStream;

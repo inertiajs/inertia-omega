@@ -34,7 +34,7 @@ This crate implements the server side of the [Inertia v3 protocol](https://inert
 
 ```toml
 [dependencies]
-inertia-omega = { path = "../inertia-omega" }
+inertia-laravel-rust = { path = "../inertia-laravel-rust" }
 ```
 
 The crate's library name is `inertia`, so Rust imports use `inertia::…`. The sibling path above assumes the current [workspace layout](https://github.com/laravel/omega-workspace#setup).
@@ -325,7 +325,7 @@ The root view renders the HTML document of a first visit. It is any `Fn(&View) -
 - `data`: view data,
 - `ssr`: whether the page was server-side rendered.
 
-The [`laravel-omega-vite`](../laravel-omega-vite) crate's `Vite` renders asset tags like Laravel's `@vite`. It's a separate dependency, `laravel-omega-vite = { path = "../laravel-omega-vite" }`, used as `vite::Vite`:
+The [`laravel-vite-rust`](../laravel-vite-rust) crate's `Vite` renders asset tags like Laravel's `@vite`. It's a separate dependency, `laravel-vite-rust = { path = "../laravel-vite-rust" }`, used as `vite::Vite`:
 
 - **In development** the Vite dev server writes its URL to a hot file (`public/hot`), and tags point at the dev server, with `Vite::react_refresh()` providing React Fast Refresh's preamble.
 - **In production** tags come from the build manifest, and its hash makes a good asset version.

@@ -77,7 +77,7 @@ pub type HttpResponse = http::Response<String>;
 
 #[doc(hidden)]
 pub mod __private {
-    pub use inertia_omega_macros::props;
+    pub use inertia_laravel_rust_macros::props;
 
     /// A value that a shorthand `props!` entry can borrow, which is any `Serialize` value.
     #[diagnostic::on_unimplemented(

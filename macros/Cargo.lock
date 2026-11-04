@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "inertia-omega-macros"
+name = "inertia-laravel-rust-macros"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",

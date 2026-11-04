@@ -1,11 +1,11 @@
 [package]
-name = "inertia-omega-macros"
+name = "inertia-laravel-rust-macros"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
-description = "The procedural macros of `inertia-omega`, re-exported by it"
+description = "The procedural macros of `inertia-laravel-rust`, re-exported by it"
 license = "MIT"
-repository = "https://github.com/inertiajs/inertia-omega"
+repository = "https://github.com/inertiajs/inertia-laravel-rust"
 
 [lib]
 proc-macro = true
