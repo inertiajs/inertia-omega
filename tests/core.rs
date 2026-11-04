@@ -425,6 +425,16 @@ async fn scroll_props_take_callbacks_that_return_results() {
     assert_eq!(response.into_page().await.unwrap_err().to_string(), "The feed is down");
 }
 
+#[test]
+fn a_page_past_the_last_page_scrolls_back_to_the_last_page() {
+    let past = ScrollMetadata::pages("page", 100_000, 3);
+    let empty = ScrollMetadata::pages("page", 5, 0);
+
+    assert_eq!((past.previous_page, past.next_page), (Some(json!(3)), None));
+    assert_eq!(empty.previous_page, Some(json!(1)));
+    assert_eq!(ScrollMetadata::pages("page", 3, 3).previous_page, Some(json!(2)));
+}
+
 /// A page of results, as an application's paginator serializes one.
 #[derive(Serialize)]
 struct Results {

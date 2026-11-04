@@ -19,11 +19,13 @@ pub struct ScrollMetadata {
 }
 
 impl ScrollMetadata {
-    /// Create metadata for page-number based pagination.
+    /// Create metadata for page-number based pagination. Past the last page,
+    /// the previous page is the last page, so the client doesn't load every
+    /// empty page in between.
     pub fn pages(page_name: impl Into<String>, current_page: u64, last_page: u64) -> Self {
         Self {
             page_name: page_name.into(),
-            previous_page: (current_page > 1).then(|| (current_page - 1).into()),
+            previous_page: (current_page > 1).then(|| (current_page - 1).min(last_page.max(1)).into()),
             next_page: (current_page < last_page).then(|| (current_page + 1).into()),
             current_page: Some(current_page.into()),
         }
