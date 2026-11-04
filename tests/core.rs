@@ -409,6 +409,22 @@ async fn scroll_props_carry_pagination_metadata() {
     assert_eq!(page.metadata.scroll_props["later"].metadata.next_page, None);
 }
 
+#[tokio::test]
+async fn scroll_props_take_callbacks_that_return_results() {
+    let page = || async { Ok::<_, std::io::Error>(Results::page(vec![4, 5], 2, 3)) };
+    let broken = || async { Err::<Results, _>(std::io::Error::other("The feed is down")) };
+
+    let rendered = resolve(visit(&[]).render("Feed", props! { "posts" => inertia::scroll_with(page) })).await;
+    assert_eq!(rendered.props["posts"]["data"], json!([4, 5]));
+    assert_eq!(
+        rendered.metadata.scroll_props["posts"].metadata.next_page,
+        Some(json!(3))
+    );
+
+    let response = visit(&[]).render("Feed", props! { "posts" => inertia::scroll_with(broken) });
+    assert_eq!(response.into_page().await.unwrap_err().to_string(), "The feed is down");
+}
+
 /// A page of results, as an application's paginator serializes one.
 #[derive(Serialize)]
 struct Results {

@@ -207,6 +207,8 @@ impl ProvidesScrollMetadata for UserPage {
 users => inertia::scroll_with(async move || db.user_page(page).await),
 ```
 
+Like a lazy prop's callback, a `scroll_with` callback may return a `Result`. Its error fails the response, unless the prop is `.rescue()`d.
+
 ### Live props
 
 A live prop reloads when the client receives one of its broadcast events. Each `LiveListener` names a channel and the events broadcast on it:

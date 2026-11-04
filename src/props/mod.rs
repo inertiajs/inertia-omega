@@ -425,20 +425,49 @@ where
     scrollable(Prop::value(page), Some(metadata))
 }
 
-/// An infinite scroll prop, from a callback that loads a page of items.
-pub fn scroll_with<F, Fut, P>(callback: F) -> Prop
+/// A page of items that a [`scroll_with`] callback returns: a value with
+/// [`ProvidesScrollMetadata`], or a `Result` of one. The marker `M` tells the
+/// two apart.
+#[diagnostic::on_unimplemented(
+    message = "a scroll prop's callback returns `{Self}`, which isn't a page of items",
+    label = "this callback",
+    note = "return a `Serialize` value that implements `ProvidesScrollMetadata`, or a `Result` of one whose error converts into `Box<dyn Error + Send + Sync>`"
+)]
+pub trait LoadedPage<M> {
+    #[doc(hidden)]
+    fn into_page(self) -> Result<(Value, ScrollMetadata), PropError>;
+}
+
+impl<P: ProvidesScrollMetadata + Serialize> LoadedPage<Plain> for P {
+    fn into_page(self) -> Result<(Value, ScrollMetadata), PropError> {
+        let metadata = self.scroll_metadata();
+
+        Ok((serde_json::to_value(self)?, metadata))
+    }
+}
+
+impl<P: ProvidesScrollMetadata + Serialize, E: Into<BoxError>> LoadedPage<Fallible> for Result<P, E> {
+    fn into_page(self) -> Result<(Value, ScrollMetadata), PropError> {
+        self.map_err(PropError::new)?.into_page()
+    }
+}
+
+/// An infinite scroll prop, from a callback that loads a page of items. The
+/// callback may return a `Result`. Its error fails the response, unless the
+/// prop is [rescued](Prop::rescue).
+pub fn scroll_with<F, Fut, P, M>(callback: F) -> Prop
 where
     F: FnOnce() -> Fut + Send + 'static,
     Fut: Future<Output = P> + Send + 'static,
-    P: ProvidesScrollMetadata + Serialize,
+    P: LoadedPage<M>,
 {
     let source = Source::Callback(Box::new(move || {
         Box::pin(async move {
-            let page = callback().await;
+            let (value, metadata) = callback().await.into_page()?;
 
             Ok(Computed {
-                scroll: Some(page.scroll_metadata()),
-                value: serde_json::to_value(page)?,
+                value,
+                scroll: Some(metadata),
             })
         })
     }));
