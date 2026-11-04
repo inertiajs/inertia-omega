@@ -6,6 +6,7 @@ rust-version = "1.99"
 description = "The procedural macros of `inertia-laravel-rust`, re-exported by it"
 license = "MIT"
 repository = "https://github.com/inertiajs/inertia-laravel-rust"
+publish = ["pilot"]
 
 [lib]
 proc-macro = true

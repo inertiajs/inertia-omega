@@ -1,0 +1,25 @@
+name: Pilot
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_REGISTRIES_PILOT_INDEX: sparse+https://pilot.laravel.cloud/cargo/index/
+      CARGO_REGISTRIES_PILOT_CREDENTIAL_PROVIDER: cargo:token
+      CARGO_REGISTRIES_PILOT_TOKEN: ${{ secrets.PILOT_NPM_PUBLISH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # Every build gets its own patch version, so `^0.1.0` requirements pick up each one.
+      - run: perl -0pi -e 's/^version = "(\d+)\.(\d+)\.[^"]+"/version = "$1.$2.$ENV{RUN}"/m' Cargo.toml macros/Cargo.toml
+        env:
+          RUN: ${{ github.run_number }}
+      - run: cargo publish --registry pilot --allow-dirty --manifest-path macros/Cargo.toml
+      - run: cargo publish --registry pilot --allow-dirty
