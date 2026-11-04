@@ -6,7 +6,10 @@ use std::time::Duration;
 use http::{HeaderMap, HeaderName, Method};
 use inertia::session::ArraySession;
 use inertia::testing::AssertablePage;
-use inertia::{Config, Inertia, LiveChannel, LiveListener, Page, Paginator, Props, Request, ValidationErrors, props};
+use inertia::{
+    Config, Inertia, LiveChannel, LiveListener, Page, Props, ProvidesScrollMetadata, Request, ScrollMetadata,
+    ValidationErrors, props,
+};
 use serde::Serialize;
 use serde_json::json;
 
@@ -380,8 +383,8 @@ async fn once_props_are_skipped_when_the_client_has_them() {
 async fn scroll_props_carry_pagination_metadata() {
     let props = || {
         props! {
-            "users" => inertia::scroll(Paginator::from_items(1..=25, 10, 2)),
-            "later" => inertia::scroll_with(|| async { Paginator::from_items(1..=5, 10, 1) }).deferred(),
+            "users" => inertia::scroll(Results::page((11..=20).collect(), 2, 3)),
+            "later" => inertia::scroll_with(|| async { Results::page((1..=5).collect(), 1, 1) }).deferred(),
         }
     };
 
@@ -406,13 +409,27 @@ async fn scroll_props_carry_pagination_metadata() {
     assert_eq!(page.metadata.scroll_props["later"].metadata.next_page, None);
 }
 
-#[test]
-fn paginator_normalizes_a_zero_page() {
-    let paginator = Paginator::new(vec!["Taylor"], 1, 15, 0);
+/// A page of results, as an application's paginator serializes one.
+#[derive(Serialize)]
+struct Results {
+    data: Vec<u64>,
+    #[serde(skip)]
+    scroll: ScrollMetadata,
+}
 
-    assert_eq!(paginator.current_page, 1);
-    assert_eq!(paginator.from, Some(1));
-    assert_eq!(paginator.to, Some(1));
+impl Results {
+    fn page(data: Vec<u64>, current_page: u64, last_page: u64) -> Self {
+        Self {
+            data,
+            scroll: ScrollMetadata::pages("page", current_page, last_page),
+        }
+    }
+}
+
+impl ProvidesScrollMetadata for Results {
+    fn scroll_metadata(&self) -> ScrollMetadata {
+        self.scroll.clone()
+    }
 }
 
 #[tokio::test]
@@ -929,7 +946,7 @@ async fn live_props_that_merge_or_listen_for_nothing_fail_the_render() {
         ),
         (
             "scroll",
-            inertia::scroll(Paginator::from_items(vec![1], 15, 1)).live(order_listeners()),
+            inertia::scroll(Results::page(vec![1], 1, 1)).live(order_listeners()),
             "live props can't merge",
         ),
         (

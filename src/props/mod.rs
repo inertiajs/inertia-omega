@@ -17,7 +17,7 @@ use crate::page::LiveListener;
 pub(crate) use self::prop::{Computed, Loading, Merge, Once, Source};
 pub use self::prop::{IntoProp, Prop};
 pub(crate) use self::resolver::PropsResolver;
-pub use self::scroll::{Paginator, ProvidesScrollMetadata, ScrollMetadata};
+pub use self::scroll::{ProvidesScrollMetadata, ScrollMetadata};
 
 /// A boxed error, as returned by fallible prop callbacks.
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -414,7 +414,8 @@ pub fn deep_merge(value: impl IntoProp) -> Prop {
     value.into_prop().deep_merge()
 }
 
-/// An infinite scroll prop, from a page of items such as a [`Paginator`].
+/// An infinite scroll prop, from a page of items that describes its pages with
+/// [`ProvidesScrollMetadata`]. The items go under the page's `data` key.
 pub fn scroll<P>(page: P) -> Prop
 where
     P: ProvidesScrollMetadata + Serialize,
