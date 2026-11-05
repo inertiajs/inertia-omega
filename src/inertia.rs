@@ -9,7 +9,7 @@ use serde_json::{Map, Value};
 use crate::HttpResponse;
 use crate::config::Config;
 use crate::errors::ValidationErrors;
-use crate::props::{IntoProp, IntoProps, Props};
+use crate::props::{IntoProp, IntoProps, PropError, Props};
 use crate::protocol;
 use crate::request::Request;
 use crate::response::Response;
@@ -49,7 +49,10 @@ pub(crate) struct Pending {
     pub(crate) shared: Props,
     pub(crate) handoff: Handoff,
     pub(crate) encrypt_history: Option<bool>,
+    pub(crate) before_render: Option<BeforeRender>,
 }
+
+type BeforeRender = Box<dyn FnOnce(&mut Props, &Props) -> Result<(), PropError> + Send>;
 
 impl Inertia {
     /// Create a handle without a session. Queued data can reach this request's
@@ -100,6 +103,20 @@ impl Inertia {
 
         let replaced = self.pending().shared.0.insert(key, value);
         // Drop a replaced prop after the lock, since a callback's captures can run application code...
+        drop(replaced);
+        self
+    }
+
+    /// Run a callback on the next page render, once the shared props are merged and before any
+    /// prop resolves. It may change the shared props, and it sees the page's own props, so an
+    /// adapter can add a prop that no other prop may replace. An error fails the render, as a
+    /// prop that fails to resolve does. A later call replaces the callback.
+    pub fn before_render(
+        &self,
+        callback: impl FnOnce(&mut Props, &Props) -> Result<(), PropError> + Send + 'static,
+    ) -> &Self {
+        let replaced = self.pending().before_render.replace(Box::new(callback));
+        // Drop a replaced callback after the lock, since its captures can run application code...
         drop(replaced);
         self
     }
@@ -172,9 +189,14 @@ impl Inertia {
     /// the session. Adapters call this once the handler and any page render
     /// have finished.
     pub async fn commit(&self) {
-        let Pending { shared, handoff, .. } = std::mem::take(&mut *self.pending());
+        let Pending {
+            shared,
+            handoff,
+            before_render,
+            ..
+        } = std::mem::take(&mut *self.pending());
         // Drop props no page rendered after the lock, since their callbacks' captures can run application code...
-        drop(shared);
+        drop((shared, before_render));
 
         if handoff.is_empty() {
             return;
