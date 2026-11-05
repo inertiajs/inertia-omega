@@ -218,6 +218,12 @@ impl Response {
             shared.extend(share(request));
         }
         shared.extend(pending.shared);
+        if let Some(before_render) = pending.before_render
+            && let Err(error) = before_render(&mut shared, &props)
+        {
+            inertia.requeue(handoff, pending.encrypt_history);
+            return Err(error);
+        }
 
         let resolved = PropsResolver::new(request, &component)
             .resolve(shared, props, config.expose_shared_prop_keys)
